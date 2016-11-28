@@ -3,7 +3,8 @@
 # some public cloud wrapper
 #
 # require https://github.com/yadutaf/ovh-cli + pip requirement + auth
-# auth with: 
+# require jq (c++ json parser for bash)
+# auth with:
 # OVH Europe: https://eu.api.ovh.com/createApp/
 # and create a consumer_key with ../ovh-cli/create-consumer-key.py
 # store all in ovh.conf
@@ -49,24 +50,33 @@ get_snapshot() {
 get_flavor() {
 	local p=$1
 	local flavor_name=$2
-	ovh_cli --format json cloud project $p flavor --region GRA1 \
-		| jq -r ".[]|select(.name == \"$flavor_name\").id"
+
+  if [[ -z "$flavor_name" ]]
+  then
+    ovh_cli --format json cloud project $p flavor --region GRA1 \
+      | jq -r '.[]|.id+" "+.name'
+  else
+    ovh_cli --format json cloud project $p flavor --region GRA1 \
+      | jq -r ".[]|select(.name == \"$flavor_name\").id"
+  fi
 }
 
 create_instance() {
 	local p=$1
   local snap=$2
   local sshkey=$3
-	flavor_name=sp-30-ssd
-	flavor_id=$(get_flavor $p $flavor_name)
-	echo "create_instance $flavor_name $flavor_id with snap $snap"
+  local hostname=$4
 
-  set -x
+	flavor_name=sp-30-ssd
+	#flavor_name=vps-ssd-1
+	flavor_id=$(get_flavor $p $flavor_name)
+	#echo "create_instance $flavor_name $flavor_id with snap $snap"
+
   ovh_cli --format json cloud project $p instance create \
     --flavorId $flavor_id \
     --imageId $snap \
     --monthlyBilling false \
-    --name server_cmd \
+    --name $hostname \
     --region GRA1 \
     --sshKeyId $sshkey
 }
@@ -91,7 +101,12 @@ get_instance_status() {
   if [[ -z "$i" ]]
   then
       ovh_cli --format json  cloud project $p instance | jq .
-  else
+  elif [[ ! -z "$i" && -z "$3" ]]
+  then
+      ovh_cli --format json  cloud project $p instance $i \
+        | jq -r '.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
+  elif [[ ! -z "$i" && "$3" == full ]]
+  then
       ovh_cli --format json  cloud project $p instance $i
   fi
 	#status: "ACTIVE"
@@ -113,8 +128,84 @@ get_sshkeys() {
   fi
 }
 
+get_domain_record() {
+  local fqdn=$1
+  local domain=${1#*.}
+  local subdomain=${1%%.*}
+  ovh_cli --format json domain zone $domain record \
+    --subDomain $subdomain \
+    | jq -r '.[0]'
+}
+
+# same order as given in list_instance ip, fqdn
+set_ip_domain() {
+  local ip=$1
+  local fqdn=$2
+
+  local domain=${fqdn#*.}
+
+  set_forward_dns $ip $fqdn
+
+  # reverse, doesn't work
+  ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
+}
+
+# same order as given in list_instance ip, fqdn
+set_forward_dns() {
+  local ip=$1
+  local fqdn=$2
+
+  local domain=${fqdn#*.}
+  local subdomain=${fqdn%%.*}
+  local record=$(get_domain_record $fqdn)
+  if [[ -z "$record" || "$record" == null ]]
+  then
+    # must be created
+    record=$(
+      ovh_cli --format json domain zone $domain record create \
+        --target $ip --ttl 60 --subDomain $subdomain --fieldType A \
+        | jq -r '.id'
+    )
+  else
+    ovh_cli --format json domain zone $domain record $record put --target $ip --ttl 60
+  fi
+
+  ovh_cli domain zone $domain refresh post
+}
+
+delete_instance() {
+  local p=$1
+  local i=$2
+  ovh_cli cloud project $p instance $i delete
+}
+
 
 ####################################### main
+
+call_func() {
+	# auto detect action loop
+	local func="$1"
+	shift
+	local all_func=$(sed -n '/^[a-zA-Z_]\+(/ s/() {// p' $(readlink -f $0))
+	local found=0
+  local f
+	for f in $all_func
+	do
+		if [[ "$func" == $f ]]
+		then
+			# call the matching action with command line parameter
+			eval "$f $@"
+			found=1
+			break
+		fi
+	done
+
+	if [[ $found -eq 0 ]]
+	then
+		echo "unknown func: '$func'"
+		exit 1
+	fi
+}
 
 proj=$2
 
@@ -131,7 +222,18 @@ case $1 in
   create)
     snap=$3
     sshkey=$(get_sshkeys $proj sylvain)
-    create_instance $proj $snap $sshkey
+    hostname=$4
+    tmp=/tmp/create_$hostname
+    create_instance $proj $snap $sshkey $hostname | tee $tmp
+    instance=$(jq -r '.id' < $tmp)
+    echo instance $instance
+    #while true
+    #do
+    #  sleep 2
+    #  if get_instance_status $proj $instance | tee $tmp | grep ACTIVE
+    #  then
+    #    set_forward_dns
+    #  fi
   ;;
   get_ssh)
     name=$3
@@ -141,12 +243,17 @@ case $1 in
     list_instance $proj
   ;;
   rename)
-    instanceId=$3
+    instance=$3
     new_name=$4
-    rename_instance $proj $instanceId $new_name
+    rename_instance $proj $instance $new_name
+    get_instance_status $proj $instance
     ;;
 	status)
 		instance=$3
 		get_instance_status $proj $instance | jq .
 	;;
+  *)
+    # free function call, careful to put args in good order
+    call_func "$@"
+  ;;
 esac
