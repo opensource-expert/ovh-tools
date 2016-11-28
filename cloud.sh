@@ -1,35 +1,45 @@
 #!/bin/bash
 
+me=$(readlink -f $0)
+mydir=$(dirname $me)
+ovh_clidir=$mydir/../ovh-cli
+
+ovh_cli() {
+  cd $ovh_clidir
+  ./ovh-eu "$@"
+  cd - > /dev/null
+}
+
 show_project() {
-    clouds=$(./ovh-eu --format json cloud project | jq -r .[])
+    clouds=$(ovh_cli --format json cloud project | jq -r .[])
     for c in $clouds
     do
-        project=$(./ovh-eu --format json cloud project $c | jq -r .description)
+        project=$(ovh_cli --format json cloud project $c | jq -r .description)
         echo "$c = $project"
     done
 }
 
 last_snapshot() {
   local p=$1
-	snap=$(./ovh-eu --format json cloud project $p snapshot | jq -r '.|sort_by(.creationDate)|reverse|.[0].id')
+	snap=$(ovh_cli --format json cloud project $p snapshot | jq -r '.|sort_by(.creationDate)|reverse|.[0].id')
 
 	echo $snap
 }
 
 list_snapshot() {
   local p=$1
-	./ovh-eu --format json cloud project $p snapshot | jq -r '.[]|.id +" "+.name'
+	ovh_cli --format json cloud project $p snapshot | jq -r '.[]|.id +" "+.name'
 }
 
 get_snapshot() {
   local p=$1
-	./ovh-eu --format json cloud project $p snapshot | jq -r '.[]|.id +" "+.name'
+	ovh_cli --format json cloud project $p snapshot | jq -r '.[]|.id +" "+.name'
 }
 
 get_flavor() {
 	local p=$1
 	local flavor_name=$2
-	./ovh-eu --format json cloud project $p flavor --region GRA1 \
+	ovh_cli --format json cloud project $p flavor --region GRA1 \
 		| jq -r ".[]|select(.name == \"$flavor_name\").id"
 }
 
@@ -42,7 +52,7 @@ create_instance() {
 	echo "create_instance $flavor_name $flavor_id with snap $snap"
 
   set -x
-  ./ovh-eu --format json cloud project $p instance create \
+  ovh_cli --format json cloud project $p instance create \
     --flavorId $flavor_id \
     --imageId $snap \
     --monthlyBilling false \
@@ -58,14 +68,14 @@ get_instance_status() {
   then
       . ovh-eu --format json  cloud project $p instance | jq .
   else
-      ./ovh-eu --format json  cloud project $p instance $i
+      ovh_cli --format json  cloud project $p instance $i
   fi
 	#status: "ACTIVE"
 }
 
 list_sshkeys() {
 	local p=$1
-  ./ovh-eu --format json cloud project $p sshkey
+  ovh_cli --format json cloud project $p sshkey
 }
 
 get_sshkeys() {
@@ -78,6 +88,9 @@ get_sshkeys() {
     list_sshkeys $p | jq -r '.[]|.id+" "+.name'
   fi
 }
+
+
+
 
 proj=$2
 
