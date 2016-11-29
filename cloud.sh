@@ -150,7 +150,9 @@ set_ip_domain() {
   set_forward_dns $ip $fqdn
 
   # reverse, doesn't work
-  ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
+  #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
+  # python wrapper
+  $mydir/ovh_reverse.py $ip ${fqdn#.}.
 }
 
 # same order as given in list_instance ip, fqdn
