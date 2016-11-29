@@ -1,0 +1,22 @@
+# example of application credential copied form https://eu.api.ovh.com/createApp/
+Script Name
+
+VPS
+
+Script Description
+
+API VPS
+
+Application Key
+
+AppLiCaTioN_KeY_HERE_the_full_line
+
+Application Secret
+
+AppLiCaTioN_secr3te__H3R3_the_full_line
+
+Consumer Key
+
+Konsumer_K3y_matCH3D_here
+
+

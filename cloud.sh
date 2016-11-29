@@ -13,6 +13,9 @@ me=$(readlink -f $0)
 mydir=$(dirname $me)
 ovh_clidir=$mydir/../ovh-cli
 
+# a ram drive tmpfs file to catch output if any
+SHM_TMP=/dev/shm/ovh_cloud.$$
+
 # ovh-cli seems to require json def of all api in its own folder, we need to change??
 # here fixed nearby
 ovh_cli() {
@@ -67,8 +70,8 @@ create_instance() {
   local sshkey=$3
   local hostname=$4
 
-	flavor_name=sp-30-ssd
-	#flavor_name=vps-ssd-1
+	#flavor_name=sp-30-ssd
+	flavor_name=vps-ssd-1
 	flavor_id=$(get_flavor $p $flavor_name)
 	#echo "create_instance $flavor_name $flavor_id with snap $snap"
 

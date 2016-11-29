@@ -3,6 +3,10 @@
 
 '''
 First, install the latest release of Python wrapper: $ pip install ovh
+
+Uses bash ENV: (see also bash_var.sh to convert from ovh.conf)
+export OVH_* vars
+
 #Call : ovh_snapshot.py <instanceId> <snapshotName>
 '''
 
