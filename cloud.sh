@@ -179,8 +179,14 @@ delete_instance() {
   ovh_cli cloud project $p instance $i delete
 }
 
+create_snapshot() {
+  local p=$1
+  local i=$2
+  local snap_name=$3
+  ovh_cli cloud project $p instance $i snapshot create --snapshotName "$snap_name"
+}
 
-####################################### main
+###################################### main
 
 call_func() {
 	# auto detect action loop
@@ -252,6 +258,29 @@ case $1 in
 		instance=$3
 		get_instance_status $proj $instance | jq .
 	;;
+  make_snap)
+    instance=$3
+    host=$4
+    if [[ -z "$host" ]]
+    then
+      host=$(get_instance_status $proj $instance | awk '{print $3}')
+    fi
+    create_snapshot $proj $instance $host
+    ;;
+  delete)
+    instance=$3
+    if [[ $# -gt 3 ]]
+    then
+      # array slice on $@ 3 to end
+      all_instance=${@:3:$#}
+      for i in $all_instance
+      do
+        delete_instance $proj $i
+      done
+    else
+      delete_instance $proj $instance
+    fi
+    ;;
   *)
     # free function call, careful to put args in good order
     call_func "$@"
