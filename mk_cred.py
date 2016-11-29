@@ -60,6 +60,8 @@ def parse_input():
 
 
 def main():
+  url = "https://eu.api.ovh.com/createApp/"
+  print "go to '%s' and register your app, then paste text here + CTRL-D" % url
   d = parse_input()
   env = Environment(loader=FileSystemLoader('./templates'))
   template = env.get_template('ovh_t.conf')
@@ -94,7 +96,7 @@ def main():
   f = open(tmp, 'w')
   f.write(template.render(d))
   f.close()
-  print "file written '%s'" % tmp
+  print "file written '%s', you have to copy or rename to ovh.conf" % tmp
 
 
 if __name__ == '__main__':
