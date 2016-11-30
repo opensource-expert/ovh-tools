@@ -90,8 +90,9 @@ create_instance() {
 
 list_instance() {
   local p=$1
+  # filter on public ip address only
   ovh_cli --format json cloud project $p instance \
-    | jq -r '.[]|.id+" "+.ipAddresses[0].ip+" "+.name'
+    | jq -r '.[]|.id+" "+(.ipAddresses[]|select(.type=="public")).ip+" "+.name'
 }
 
 rename_instance() {
@@ -154,22 +155,16 @@ set_ip_domain() {
 
   set_forward_dns $ip $fqdn
 
-  ## tools arround to 1 to 2 min to see it with dig
-  #echo "you can set reverse DNS in 2 min with:"
-  ## not really so long…
-  #echo "$mydir/ovh_reverse.py $ip ${fqdn#.}."
+  # wait a bit
+  sleep 1
 
-  local lookup=$(dig +short $fqdn @dns.ovh.net)
-  if [[ "$lookup" == "$ip" ]]
-  then
-    # reverse, doesn't work
-    #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
-    # python wrapper
-    $mydir/ovh_reverse.py $ip ${fqdn#.}.
-  else
-    echo "forward DNS not yet available for $fqdn"
-    echo "no reverse set"
-  fi
+  # reverse, doesn't work
+  #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
+  # python wrapper
+  $mydir/ovh_reverse.py $ip ${fqdn#.}.
+
+  echo "if forward DNS not yet available for $fqdn"
+  echo "  $mydir/ovh_reverse.py $ip ${fqdn#.}. "
 }
 
 # same order as given in list_instance ip, fqdn
@@ -332,13 +327,22 @@ case $1 in
     if [[ $# -gt 3 ]]
     then
       # array slice on $@ 3 to end
-      all_instance=${@:3:$#}
-      for i in $all_instance
+      multi_instance=${@:3:$#}
+      for i in $multi_instance
       do
         delete_instance $proj $i
       done
     else
-      delete_instance $proj $instance
+      if [[ "$instance" == ALL ]]
+      then
+        while read i ip hostname
+        do
+          echo "deleting $i…"
+          delete_instance $proj $i
+        done <<< "$(list_instance $proj)"
+      else
+        delete_instance $proj $instance
+      fi
     fi
     ;;
   set_all_instance_dns)
