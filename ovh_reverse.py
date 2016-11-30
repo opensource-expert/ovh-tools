@@ -17,8 +17,11 @@ fqdn = sys.argv[2]
 # Instanciate an OVH Client. use your ovh.conf
 client = ovh.Client() 
 
-result = client.post('/ip/%s/reverse/' % ip,
-                    ipReverse=ip,
-                    reverse=fqdn)
+try:
+    result = client.post('/ip/%s/reverse/' % ip,
+                        ipReverse=ip,
+                        reverse=fqdn)
+    print json.dumps(result, indent=4) # Pretty print
+except ovh.exceptions.BadParametersError as e:
+    print e
 
-print json.dumps(result, indent=4) # Pretty print

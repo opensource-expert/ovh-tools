@@ -149,10 +149,22 @@ set_ip_domain() {
 
   set_forward_dns $ip $fqdn
 
-  # reverse, doesn't work
-  #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
-  # python wrapper
-  $mydir/ovh_reverse.py $ip ${fqdn#.}.
+  # tools arround to 1 to 2 min to see it with dig
+  echo "you can set reverse DNS in 2 min with:"
+  # not really so long…
+  echo "$mydir/ovh_reverse.py $ip ${fqdn#.}."
+
+  #local lookup=$(dig +short $fqdn @dns.ovh.net)
+  #if [[ "$lookup" == "$ip" ]]
+  #then
+  #  # reverse, doesn't work
+  #  #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
+  #  # python wrapper
+  #  $mydir/ovh_reverse.py $ip ${fqdn#.}.
+  #else
+  #  echo "forward DNS not yet available for $fqdn"
+  #  echo "no reverse set"
+  #fi
 }
 
 # same order as given in list_instance ip, fqdn
@@ -234,17 +246,39 @@ case $1 in
     snap=$3
     sshkey=$(get_sshkeys $proj sylvain)
     hostname=$4
-    tmp=/tmp/create_$hostname
+    tmp=/dev/shm/create_$hostname.$$
     create_instance $proj $snap $sshkey $hostname | tee $tmp
     instance=$(jq -r '.id' < $tmp)
     echo instance $instance
-    #while true
-    #do
-    #  sleep 2
-    #  if get_instance_status $proj $instance | tee $tmp | grep ACTIVE
-    #  then
-    #    set_forward_dns
-    #  fi
+    echo "to wait instance: $0 wait $proj $instance"
+    rm -f $tmp
+  ;;
+  wait)
+    instance=$3
+    sleep_delay=2
+    max=10
+    i=0
+    tmp=/dev/shm/wait_$instance.$$
+    while true
+    do
+      i=$((i + 1))
+      if [[ $i -gt $max ]]
+      then
+        echo "max count reach: $i/$max"
+        break
+      fi
+
+      if get_instance_status $proj $instance | tee $tmp | grep -q ACTIVE
+      then
+        echo OK
+        cat $tmp
+        break
+      fi
+
+      echo -n '.'
+      sleep $sleep_delay
+    done
+    rm -f $tmp
   ;;
   get_ssh)
     name=$3
