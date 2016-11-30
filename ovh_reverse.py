@@ -22,6 +22,8 @@ try:
                         ipReverse=ip,
                         reverse=fqdn)
     print json.dumps(result, indent=4) # Pretty print
-except ovh.exceptions.BadParametersError as e:
+except (ovh.exceptions.BadParametersError,
+        ovh.exceptions.ResourceConflictError) as e:
     print e
+
 

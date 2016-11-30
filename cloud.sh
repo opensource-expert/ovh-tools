@@ -13,10 +13,18 @@ me=$(readlink -f $0)
 mydir=$(dirname $me)
 ovh_clidir=$mydir/../ovh-cli
 
+if [[ "$1" == "help" || "$1" == "--help" ]]
+then
+  # list case entries and functions
+  grep -E '^([a-z_]+\(\)| +[a-z_-]+\))' $me | sed -e 's/() {//' -e 's/)$//'
+  exit 0
+fi
+
 # a ram drive tmpfs file to catch output if any
 SHM_TMP=/dev/shm/ovh_cloud.$$
 
-# ovh-cli seems to require json def of all api in its own folder, we need to change??
+# ovh-cli seems to require json def of all api in its own folder,
+# we need to change??
 # here fixed nearby
 ovh_cli() {
   cd $ovh_clidir
@@ -24,7 +32,7 @@ ovh_cli() {
   cd - > /dev/null
 }
 
-show_project() {
+show_projects() {
     clouds=$(ovh_cli --format json cloud project | jq -r .[])
     for c in $clouds
     do
@@ -35,24 +43,20 @@ show_project() {
 
 last_snapshot() {
   local p=$1
-	snap=$(ovh_cli --format json cloud project $p snapshot | jq -r '.|sort_by(.creationDate)|reverse|.[0].id')
-
-	echo $snap
+  snap=$(ovh_cli --format json cloud project $p snapshot \
+    | jq -r '.|sort_by(.creationDate)|reverse|.[0].id')
+  echo $snap
 }
 
 list_snapshot() {
   local p=$1
-	ovh_cli --format json cloud project $p snapshot | jq -r '.[]|.id +" "+.name'
-}
-
-get_snapshot() {
-  local p=$1
-	ovh_cli --format json cloud project $p snapshot | jq -r '.[]|.id +" "+.name'
+  ovh_cli --format json cloud project $p snapshot \
+    | jq -r '.[]|.id +" "+.name'
 }
 
 get_flavor() {
-	local p=$1
-	local flavor_name=$2
+  local p=$1
+  local flavor_name=$2
 
   if [[ -z "$flavor_name" ]]
   then
@@ -65,15 +69,15 @@ get_flavor() {
 }
 
 create_instance() {
-	local p=$1
+  local p=$1
   local snap=$2
   local sshkey=$3
   local hostname=$4
 
-	#flavor_name=sp-30-ssd
-	flavor_name=vps-ssd-1
-	flavor_id=$(get_flavor $p $flavor_name)
-	#echo "create_instance $flavor_name $flavor_id with snap $snap"
+  #flavor_name=sp-30-ssd
+  flavor_name=vps-ssd-1
+  flavor_id=$(get_flavor $p $flavor_name)
+  #echo "create_instance $flavor_name $flavor_id with snap $snap"
 
   ovh_cli --format json cloud project $p instance create \
     --flavorId $flavor_id \
@@ -99,8 +103,8 @@ rename_instance() {
 }
 
 get_instance_status() {
-	local p=$1
-	local i=$2
+  local p=$1
+  local i=$2
   if [[ -z "$i" ]]
   then
       ovh_cli --format json  cloud project $p instance | jq .
@@ -112,11 +116,11 @@ get_instance_status() {
   then
       ovh_cli --format json  cloud project $p instance $i
   fi
-	#status: "ACTIVE"
+  #status: "ACTIVE"
 }
 
 list_sshkeys() {
-	local p=$1
+  local p=$1
   ovh_cli --format json cloud project $p sshkey
 }
 
@@ -131,7 +135,7 @@ get_sshkeys() {
   fi
 }
 
-get_domain_record() {
+get_domain_record_id() {
   local fqdn=$1
   local domain=${1#*.}
   local subdomain=${1%%.*}
@@ -141,6 +145,7 @@ get_domain_record() {
 }
 
 # same order as given in list_instance ip, fqdn
+# instance needs to be ACTIVE and have an IP
 set_ip_domain() {
   local ip=$1
   local fqdn=$2
@@ -149,22 +154,22 @@ set_ip_domain() {
 
   set_forward_dns $ip $fqdn
 
-  # tools arround to 1 to 2 min to see it with dig
-  echo "you can set reverse DNS in 2 min with:"
-  # not really so long…
-  echo "$mydir/ovh_reverse.py $ip ${fqdn#.}."
+  ## tools arround to 1 to 2 min to see it with dig
+  #echo "you can set reverse DNS in 2 min with:"
+  ## not really so long…
+  #echo "$mydir/ovh_reverse.py $ip ${fqdn#.}."
 
-  #local lookup=$(dig +short $fqdn @dns.ovh.net)
-  #if [[ "$lookup" == "$ip" ]]
-  #then
-  #  # reverse, doesn't work
-  #  #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
-  #  # python wrapper
-  #  $mydir/ovh_reverse.py $ip ${fqdn#.}.
-  #else
-  #  echo "forward DNS not yet available for $fqdn"
-  #  echo "no reverse set"
-  #fi
+  local lookup=$(dig +short $fqdn @dns.ovh.net)
+  if [[ "$lookup" == "$ip" ]]
+  then
+    # reverse, doesn't work
+    #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
+    # python wrapper
+    $mydir/ovh_reverse.py $ip ${fqdn#.}.
+  else
+    echo "forward DNS not yet available for $fqdn"
+    echo "no reverse set"
+  fi
 }
 
 # same order as given in list_instance ip, fqdn
@@ -174,20 +179,35 @@ set_forward_dns() {
 
   local domain=${fqdn#*.}
   local subdomain=${fqdn%%.*}
-  local record=$(get_domain_record $fqdn)
+  local record=$(get_domain_record_id $fqdn)
+
   if [[ -z "$record" || "$record" == null ]]
   then
     # must be created
-    record=$(
-      ovh_cli --format json domain zone $domain record create \
-        --target $ip --ttl 60 --subDomain $subdomain --fieldType A \
-        | jq -r '.id'
-    )
+    ovh_cli --format json domain zone $domain record create \
+      --target $ip --ttl 60 --subDomain $subdomain --fieldType A
   else
-    ovh_cli --format json domain zone $domain record $record put --target $ip --ttl 60
+    ovh_cli --format json domain zone $domain record $record put \
+      --target $ip \
+      --ttl 60
   fi
 
   ovh_cli domain zone $domain refresh post
+}
+
+# for cleanup, unused call it manually
+delete_dns_record() {
+  local fqdn=$1
+  local domain=${fqdn#*.}
+  local record=$(get_domain_record_id $fqdn)
+
+  if [[ -z "$record" || "$record" == null ]]
+  then
+    echo "not found"
+  else
+    ovh_cli domain zone $domain record $record delete
+    ovh_cli domain zone $domain refresh post
+  fi
 }
 
 delete_instance() {
@@ -200,48 +220,49 @@ create_snapshot() {
   local p=$1
   local i=$2
   local snap_name=$3
-  ovh_cli cloud project $p instance $i snapshot create --snapshotName "$snap_name"
+  ovh_cli cloud project $p instance $i snapshot create \
+    --snapshotName "$snap_name"
 }
 
 ###################################### main
 
 call_func() {
-	# auto detect action loop
-	local func="$1"
-	shift
-	local all_func=$(sed -n '/^[a-zA-Z_]\+(/ s/() {// p' $(readlink -f $0))
-	local found=0
+  # auto detect functions name loop
+  local func="$1"
+  shift
+  local all_func=$(sed -n '/^[a-zA-Z_]\+(/ s/() {// p' $(readlink -f $0))
+  local found=0
   local f
-	for f in $all_func
-	do
-		if [[ "$func" == $f ]]
-		then
-			# call the matching action with command line parameter
-			eval "$f $@"
-			found=1
-			break
-		fi
-	done
+  for f in $all_func
+  do
+    if [[ "$func" == $f ]]
+    then
+      # call the matching action with command line parameter
+      eval "$f $@"
+      found=1
+      break
+    fi
+  done
 
-	if [[ $found -eq 0 ]]
-	then
-		echo "unknown func: '$func'"
-		exit 1
-	fi
+  if [[ $found -eq 0 ]]
+  then
+    echo "unknown func: '$func'"
+    exit 1
+  fi
 }
 
 proj=$2
 
 if [[ -z "$1" || -z "$proj" ]]
 then
-    show_project
+    show_projects
     exit
 fi
 
 case $1 in
-	get_snap)
+  get_snap)
     list_snapshot $proj
-	;;
+  ;;
   create)
     snap=$3
     sshkey=$(get_sshkeys $proj sylvain)
@@ -256,7 +277,7 @@ case $1 in
   wait)
     instance=$3
     sleep_delay=2
-    max=10
+    max=20
     i=0
     tmp=/dev/shm/wait_$instance.$$
     while true
@@ -264,7 +285,7 @@ case $1 in
       i=$((i + 1))
       if [[ $i -gt $max ]]
       then
-        echo "max count reach: $i/$max"
+        echo "max count reach: $max"
         break
       fi
 
@@ -281,8 +302,8 @@ case $1 in
     rm -f $tmp
   ;;
   get_ssh)
-    name=$3
-    get_sshkeys $proj $name
+    userkey=$3
+    get_sshkeys $proj $userkey
   ;;
   list_instance)
     list_instance $proj
@@ -293,10 +314,10 @@ case $1 in
     rename_instance $proj $instance $new_name
     get_instance_status $proj $instance
     ;;
-	status)
-		instance=$3
-		get_instance_status $proj $instance | jq .
-	;;
+  status)
+    instance=$3
+    get_instance_status $proj $instance | jq .
+  ;;
   make_snap)
     instance=$3
     host=$4
@@ -319,6 +340,12 @@ case $1 in
     else
       delete_instance $proj $instance
     fi
+    ;;
+  set_all_instance_dns)
+    while read i ip hostname
+    do
+      set_ip_domain $ip $hostname
+    done <<< "$(list_instance $proj)"
     ;;
   *)
     # free function call, careful to put args in good order
