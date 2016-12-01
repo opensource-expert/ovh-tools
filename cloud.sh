@@ -337,7 +337,7 @@ case $1 in
       then
         while read i ip hostname
         do
-          echo "deleting $i…"
+          echo "deleting $i $hostname…"
           delete_instance $proj $i
         done <<< "$(list_instance $proj)"
       else
