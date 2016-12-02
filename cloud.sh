@@ -126,18 +126,21 @@ rename_instance() {
 get_instance_status() {
   local p=$1
   local i=$2
+  # $3 full summary of a named instance
   if [[ -z "$i" ]]
   then
-      ovh_cli --format json  cloud project $p instance | jq .
+    # list all in json
+    ovh_cli --format json  cloud project $p instance | jq .
   elif [[ ! -z "$i" && -z "$3" ]]
   then
-      ovh_cli --format json  cloud project $p instance $i \
-        | jq -r '.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
+    # list summary in text 
+    ovh_cli --format json  cloud project $p instance $i \
+      | jq -r '.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
   elif [[ ! -z "$i" && "$3" == full ]]
   then
-      ovh_cli --format json  cloud project $p instance $i
+    # full summary in json for the given instance
+    ovh_cli --format json  cloud project $p instance $i
   fi
-  #status: "ACTIVE"
 }
 
 list_sshkeys() {
@@ -315,6 +318,7 @@ loadconf() {
 }
 
 call_func() {
+  echo "$@"
   # auto detect functions name loop
   local func="$1"
   shift
@@ -410,7 +414,7 @@ function main() {
       ;;
     status)
       instance=$3
-      get_instance_status $proj $instance | jq .
+      get_instance_status $proj $instance
     ;;
     make_snap)
       instance=$3
@@ -459,10 +463,17 @@ function main() {
         exit 1
       fi
       ;;
-    *)
+    call)
       # free function call, careful to put args in good order
-      call_func "$@"
-    ;;
+      echo "call: $@"
+      call_function=$2
+      shift 2
+      call_func $call_function "$@"
+      ;;
+    *)
+      echo "free call is now: call $action $@"
+      exit 1
+      ;;
   esac
 }
 
@@ -471,7 +482,10 @@ then
   loadconf "$CONFFILE"
   if [[ ! -z "$project_id" ]]
   then
-    if id_is_project "$2"
+    if [[ "$1" == 'call' ]]
+    then
+      main "$@"
+    elif id_is_project "$2"
     then
       # project_id in CONFFILE but forced on command line
       main "$@"
