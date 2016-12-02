@@ -1,0 +1,6 @@
+
+# rename all server
+for i in $(seq 1 $(./cloud.sh list_instance 31300838a99542babbe280687363fcb7 | tee /dev/shm/s | wc -l)); do echo $i;
+./cloud.sh rename 31300838a99542babbe280687363fcb7 $(awk "NR == $i {print \$1}" /dev/shm/s)
+serveur-0$i.opensource-expert.com; done
+

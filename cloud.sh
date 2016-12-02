@@ -7,11 +7,23 @@
 # auth with:
 # OVH Europe: https://eu.api.ovh.com/createApp/
 # and create a consumer_key with ../ovh-cli/create-consumer-key.py
-# store all in ovh.conf
+# store all OVH api credential in ovh.conf
+#
+# Usage:
+#  ./cloud.sh               list projects
+#  ./cloud.sh ACTION [project_id] param ...
+#  ./cloud.sh help          list action and functions
+#
 
-me=$(readlink -f $0)
-mydir=$(dirname $me)
-ovh_clidir=$mydir/../ovh-cli
+
+########################################################  init
+[[ $0 != "$BASH_SOURCE" ]] && sourced=1 || sourced=0
+if [[ $sourced -eq 0  ]]
+then
+  me=$(readlink -f $0)
+else
+  me=$(readlink -f "$BASH_SOURCE")
+fi
 
 if [[ "$1" == "help" || "$1" == "--help" ]]
 then
@@ -20,8 +32,16 @@ then
   exit 0
 fi
 
-# a ram drive tmpfs file to catch output if any
-SHM_TMP=/dev/shm/ovh_cloud.$$
+mydir=$(dirname $me)
+ovh_clidir=$mydir/../ovh-cli
+
+# you can "export CONFFILE=some_file" to override
+if [[ -z "$CONFFILE" ]]
+then
+  CONFFILE="$mydir/cloud.conf"
+fi
+
+###################################### functions
 
 # ovh-cli seems to require json def of all api in its own folder,
 # we need to change??
@@ -37,7 +57,7 @@ show_projects() {
     for c in $clouds
     do
         project=$(ovh_cli --format json cloud project $c | jq -r .description)
-        echo "$c = $project"
+        echo "$c $project"
     done
 }
 
@@ -219,7 +239,80 @@ create_snapshot() {
     --snapshotName "$snap_name"
 }
 
-###################################### main
+id_is_project() {
+  # return a array of project_id, -1 if not found
+  [[ $(ovh_cli --format json cloud project | jq "bsearch(\"$1\")") -ge 0 ]] && return 0
+  # fail
+  return 1
+}
+
+
+set_project() {
+  local p=$1
+
+  if id_is_project $p
+  then
+    write_conf "$CONFFILE" "project_id=$p"
+    return 0
+  fi
+
+  echo "error: '$p' seems not to be a valid project"
+  return 1
+}
+
+write_conf() {
+  local conffile="$1"
+  shift
+  # vars $2… formate "var=val" or "DELETE=var_name"
+
+  if [[ -e "$conffile" ]]
+  then
+    # keep old conf change only vars
+    tmp=/dev/shm/cloud_CONFFILE_$$.tmp
+    cp "$conffile" $tmp
+    for v in "$@"
+    do
+      var_name=${v%=*}
+      if [[ "$var_name" == DELETE ]]
+      then
+        # delete the var
+        var_name=${v#*=}
+        sed -i -e "/^$var_name=/ d" $tmp
+        continue
+      fi
+
+      if grep -q "^$var_name=" $tmp
+      then
+        # update
+        sed -i -e "/^$var_name=/ s/.*/$v/" $tmp
+      else
+        # new
+        echo "$v" >> $tmp
+      fi
+    done
+    #diff -u "$conffile" $tmp
+    # overwrite config
+    cp $tmp "$conffile"
+    rm -f $tmp
+  else
+    # create a new file
+    echo "#!/bin/bash" > "$conffile"
+    for v in "$@"
+    do
+      echo "$v" >> "$conffile"
+    done
+  fi
+}
+
+loadconf() {
+    local conffile="$1"
+    if [[ -e "$conffile" ]]
+    then
+        source "$conffile"
+        return 0
+    fi
+    return 1
+}
 
 call_func() {
   # auto detect functions name loop
@@ -246,113 +339,149 @@ call_func() {
   fi
 }
 
-proj=$2
+###################################### main
 
-if [[ -z "$1" || -z "$proj" ]]
-then
-    show_projects
-    exit
-fi
+# prefix 'function' not to be greped with --help
+function main() {
+  action=$1
+  proj=$2
 
-case $1 in
-  get_snap)
-    list_snapshot $proj
-  ;;
-  create)
-    snap=$3
-    sshkey=$(get_sshkeys $proj sylvain)
-    hostname=$4
-    tmp=/dev/shm/create_$hostname.$$
-    create_instance $proj $snap $sshkey $hostname | tee $tmp
-    instance=$(jq -r '.id' < $tmp)
-    echo instance $instance
-    echo "to wait instance: $0 wait $proj $instance"
-    rm -f $tmp
-  ;;
-  wait)
-    instance=$3
-    sleep_delay=2
-    max=20
-    i=0
-    tmp=/dev/shm/wait_$instance.$$
-    while true
-    do
-      i=$((i + 1))
-      if [[ $i -gt $max ]]
-      then
-        echo "max count reach: $max"
-        break
-      fi
+  if [[ -z "$action" || -z "$proj" ]]
+  then
+      echo "no project set, or no action"
+      show_projects
+      return 1
+  fi
 
-      if get_instance_status $proj $instance | tee $tmp | grep -q ACTIVE
-      then
-        echo OK
-        cat $tmp
-        break
-      fi
-
-      echo -n '.'
-      sleep $sleep_delay
-    done
-    rm -f $tmp
-  ;;
-  get_ssh)
-    userkey=$3
-    get_sshkeys $proj $userkey
-  ;;
-  list_instance)
-    list_instance $proj
-  ;;
-  rename)
-    instance=$3
-    new_name=$4
-    rename_instance $proj $instance $new_name
-    get_instance_status $proj $instance
+  case $action in
+    get_snap)
+      list_snapshot $proj
     ;;
-  status)
-    instance=$3
-    get_instance_status $proj $instance | jq .
-  ;;
-  make_snap)
-    instance=$3
-    host=$4
-    if [[ -z "$host" ]]
-    then
-      host=$(get_instance_status $proj $instance | awk '{print $3}')
-    fi
-    create_snapshot $proj $instance $host
+    create)
+      snap=$3
+      sshkey=$(get_sshkeys $proj sylvain)
+      hostname=$4
+      tmp=/dev/shm/create_$hostname.$$
+      create_instance $proj $snap $sshkey $hostname | tee $tmp
+      instance=$(jq -r '.id' < $tmp)
+      echo instance $instance
+      echo "to wait instance: $0 wait $proj $instance"
+      rm -f $tmp
     ;;
-  delete)
-    instance=$3
-    if [[ $# -gt 3 ]]
-    then
-      # array slice on $@ 3 to end
-      multi_instance=${@:3:$#}
-      for i in $multi_instance
+    wait)
+      instance=$3
+      sleep_delay=2
+      max=20
+      i=0
+      tmp=/dev/shm/wait_$instance.$$
+      while true
       do
-        delete_instance $proj $i
+        i=$((i + 1))
+        if [[ $i -gt $max ]]
+        then
+          echo "max count reach: $max"
+          break
+        fi
+
+        if get_instance_status $proj $instance | tee $tmp | grep -q ACTIVE
+        then
+          echo OK
+          cat $tmp
+          break
+        fi
+
+        echo -n '.'
+        sleep $sleep_delay
       done
-    else
-      if [[ "$instance" == ALL ]]
+      rm -f $tmp
+    ;;
+    get_ssh)
+      userkey=$3
+      get_sshkeys $proj $userkey
+    ;;
+    list_instance)
+      list_instance $proj
+    ;;
+    rename)
+      instance=$3
+      new_name=$4
+      rename_instance $proj $instance $new_name
+      get_instance_status $proj $instance
+      ;;
+    status)
+      instance=$3
+      get_instance_status $proj $instance | jq .
+    ;;
+    make_snap)
+      instance=$3
+      host=$4
+      if [[ -z "$host" ]]
       then
-        while read i ip hostname
-        do
-          echo "deleting $i $hostname…"
-          delete_instance $proj $i
-        done <<< "$(list_instance $proj)"
-      else
-        delete_instance $proj $instance
+        host=$(get_instance_status $proj $instance | awk '{print $3}')
       fi
+      create_snapshot $proj $instance $host
+      ;;
+    delete)
+      instance=$3
+      if [[ $# -gt 3 ]]
+      then
+        # array slice on $@ 3 to end
+        multi_instance=${@:3:$#}
+        for i in $multi_instance
+        do
+          delete_instance $proj $i
+        done
+      else
+        if [[ "$instance" == ALL ]]
+        then
+          while read i ip hostname
+          do
+            echo "deleting $i $hostname…"
+            delete_instance $proj $i
+          done <<< "$(list_instance $proj)"
+        else
+          delete_instance $proj $instance
+        fi
+      fi
+      ;;
+    set_all_instance_dns)
+      while read i ip hostname
+      do
+        set_ip_domain $ip $hostname
+      done <<< "$(list_instance $proj)"
+      ;;
+    set_project)
+      if set_project $proj
+      then
+        echo "project '$proj'written in '$CONFFILE'"
+        exit 0
+      else
+        exit 1
+      fi
+      ;;
+    *)
+      # free function call, careful to put args in good order
+      call_func "$@"
+    ;;
+  esac
+}
+
+if [[ $sourced -eq 0  ]]
+then
+  loadconf "$CONFFILE"
+  if [[ ! -z "$project_id" ]]
+  then
+    if id_is_project "$2"
+    then
+      # project_id in CONFFILE but forced on command line
+      main "$@"
+    else
+      # skip 1 postional parameter
+      main $1 $project_id "${@:2:$#}"
     fi
-    ;;
-  set_all_instance_dns)
-    while read i ip hostname
-    do
-      set_ip_domain $ip $hostname
-    done <<< "$(list_instance $proj)"
-    ;;
-  *)
-    # free function call, careful to put args in good order
-    call_func "$@"
-  ;;
-esac
+  else
+    # no project_id
+    main "$@"
+  fi
+  exit $?
+fi

@@ -19,6 +19,14 @@ from jinja2 import Environment, FileSystemLoader
 re.UNICODE
 re.LOCALE
 
+# Request full API access
+access_rules = [
+    {'method': 'GET', 'path': '/*'},
+    {'method': 'POST', 'path': '/*'},
+    {'method': 'PUT', 'path': '/*'},
+    {'method': 'DELETE', 'path': '/*'}
+]
+
 def parse_input():
   d = {
     'application_key' : None,
@@ -66,13 +74,6 @@ def main():
   env = Environment(loader=FileSystemLoader('./templates'))
   template = env.get_template('ovh_t.conf')
 
-  # Request full API access
-  access_rules = [
-      {'method': 'GET', 'path': '/*'},
-      {'method': 'POST', 'path': '/*'},
-      {'method': 'PUT', 'path': '/*'},
-      {'method': 'DELETE', 'path': '/*'}
-  ]
 
   client = ovh.Client(
       endpoint='ovh-eu',
@@ -98,7 +99,22 @@ def main():
   f.close()
   print "file written '%s', you have to copy or rename to ovh.conf" % tmp
 
+def generate_consumer_key():
+  # log with current ovh.conf
+  client = ovh.Client()
+
+  # Request token
+  validation = client.request_consumerkey(access_rules)
+
+  print "Please visit %s to authenticate" % validation['validationUrl']
+  raw_input("and press Enter to continue...")
+
+  # Print nice welcome message
+  print "Welcome", client.get('/me')['firstname']
+  print "Here is your Consumer Key: '%s'" % validation['consumerKey']
+
+  return validation['consumerKey']
 
 if __name__ == '__main__':
-  main()
+  generate_consumer_key()
 
