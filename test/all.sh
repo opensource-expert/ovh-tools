@@ -18,7 +18,8 @@
 # works with image too, here debian 8 (from find_image)
 sshkey=$(./cloud.sh call get_sshkeys \$project_id sylvain)
 ./cloud.sh call create_instance \$project_id 05045d18-6035-4dc1-9d89-259272280392 $sshkey new_name2
-./cloud.sh call create_instance \$project_id 05045d18-6035-4dc1-9d89-259272280392 $sshkey gdb.opensource-expert.com init_script_dhcp.sh
+./cloud.sh call create_instance \$project_id 05045d18-6035-4dc1-9d89-259272280392 $sshkey gdb.opensource-expert.com init/init_script_dhcp.sh
+./cloud.sh call create_instance \$project_id 05045d18-6035-4dc1-9d89-259272280392 $sshkey ls.opensource-expert.com init/init_root_login_OK.sh
 # manipulate instances
 ./cloud.sh call list_instance \$project_id
 instance_id=some_id
@@ -48,6 +49,8 @@ instance_id=some_id_in_list_instance
 ./cloud.sh call set_project A_PROJECT_ID
 ./cloud.sh call write_conf FILENAME "var=val" "var2=val" "DELETE=somevar"
 ./cloud.sh call loadconf FILENAME
+./cloud.sh call set_flavor \$project_id eg-7-flex
+cat cloud.conf
 
 # main commands
 ###############
@@ -56,6 +59,7 @@ snapshot_id=some_id_from_get_snap
 ./cloud.sh create $snapshot_id grep2.opensource-expert.com
 # works with image too, here debian 8 (from find_image)
 ./cloud.sh create 05045d18-6035-4dc1-9d89-259272280392 ssh.opensource-expert.com
+./cloud.sh create 05045d18-6035-4dc1-9d89-259272280392 awk.opensource-expert.com init/init_root_login_OK.sh
 ./cloud.sh wait $instance_id
 ./cloud.sh get_ssh
 ./cloud.sh list_instance
@@ -72,3 +76,8 @@ instance_id=some_id_in_list_instance
 # write config file
 project_id=someproject_id_from_show_projects_or_no_arg
 ./cloud.sh set_project $project_id
+./cloud.sh set_flavor vps-ssd-1
+
+# consumer_key
+./mk_cred.py init
+./mk_cred.py update
