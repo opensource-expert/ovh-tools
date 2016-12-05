@@ -1,10 +1,19 @@
+# ovh api wrapper
+# internal call with eval \$project_id (sourced from cloud.conf
+
+# get a OS image id
+./cloud.sh call ovh_cli --format json cloud project \$project_id image --osType linux --region GRA1 |jq '.[]|select(.name|test("Deb"))'
+./cloud.sh call find_image \$project_id Deb
+#
 ./cloud.sh call show_projects
 ./cloud.sh call last_snapshot \$project_id
 ./cloud.sh call get_flavor \$project_id
+# just the id of vps-ssd-1
+./cloud.sh call get_flavor \$project_id vps-ssd-1
 ./cloud.sh call create_instance \$project_id SNAPSHOT_ID
 ./cloud.sh call list_instance \$project_id
 ./cloud.sh call rename_instance INSTANCE_ID NEW_NAME
-./cloud.sh call get_instance_status \$project_id 
+./cloud.sh call get_instance_status \$project_id
 # or
 ./cloud.sh call get_instance_status \$project_id $instance_id
 ./cloud.sh call list_sshkeys \$project_id
@@ -22,7 +31,7 @@
 ./cloud.sh call write_conf FILENAME "var=val" "var2=val" "DELETE=somevar"
 ./cloud.sh call loadconf FILENAME
 
-# main command
+# main commands
 ./cloud.sh get_snap
 snapshot_id=some_id_from_get_snap
 ./cloud.sh create $snapshot_id grep2.opensource-expert.com
@@ -36,7 +45,7 @@ instance_id=some_id_in_list_instance
 ./cloud.sh status $instance_id
 ./cloud.sh make_snap $instance_id snap_name
 ./cloud.sh delete $instance_id
-# or 
+# or
 ./cloud.sh delete ALL
 ./cloud.sh set_all_instance_dns
 # write config file

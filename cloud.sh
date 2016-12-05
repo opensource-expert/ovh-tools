@@ -133,7 +133,7 @@ get_instance_status() {
     ovh_cli --format json  cloud project $p instance | jq .
   elif [[ ! -z "$i" && -z "$3" ]]
   then
-    # list summary in text 
+    # list summary in text
     ovh_cli --format json  cloud project $p instance $i \
       | jq -r '.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
   elif [[ ! -z "$i" && "$3" == full ]]
@@ -318,7 +318,6 @@ loadconf() {
 }
 
 call_func() {
-  echo "$@"
   # auto detect functions name loop
   local func="$1"
   shift
@@ -341,6 +340,14 @@ call_func() {
     echo "unknown func: '$func'"
     exit 1
   fi
+}
+
+find_image() {
+  local p=$1
+  local pattern=$2
+  ovh_cli --format json cloud project $p image \
+    --osType linux --region GRA1 \
+    | jq -r ".[]|select(.name|test(\"$pattern\"))|.id+\" \"+.name"
 }
 
 ###################################### main
@@ -465,7 +472,6 @@ function main() {
       ;;
     call)
       # free function call, careful to put args in good order
-      echo "call: $@"
       call_function=$2
       shift 2
       call_func $call_function "$@"

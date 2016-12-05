@@ -7,6 +7,8 @@
 # https://eu.api.ovh.com/createApp/
 #
 
+from __future__ import print_function
+
 import sys
 import re
 import os
@@ -65,11 +67,20 @@ def parse_input():
 
   return d
 
+def update_consumer_key(conffile, consumer_key):
+  for line in fileinput.FileInput(conffile, inplace=1):
+# consumer_key=LnjKrXclfc1LkL9VLeVwfTY2XNx6j54c
+      if re.match(r'consumer_key=', line):
+        line = "consumer_key=%s\n" % consumer_key
+      print(line, end='')
+
+def load_ovh_conf(conffile):
+  pass
 
 
 def main():
   url = "https://eu.api.ovh.com/createApp/"
-  print "go to '%s' and register your app, then paste text here + CTRL-D" % url
+  print("go to '%s' and register your app, then paste text here + CTRL-D" % url)
   d = parse_input()
   env = Environment(loader=FileSystemLoader('./templates'))
   template = env.get_template('ovh_t.conf')
@@ -85,19 +96,19 @@ def main():
   # Request token
   validation = client.request_consumerkey(access_rules)
 
-  print "Please visit %s to authenticate" % validation['validationUrl']
+  print("Please visit %s to authenticate" % validation['validationUrl'])
   raw_input("and press Enter to continue...")
 
   # Print nice welcome message
-  print "Welcome", client.get('/me')['firstname']
-  #print "Here is your Consumer Key: '%s'" % validation['consumerKey']
+  print("Welcome", client.get('/me')['firstname'])
+  #print("Here is your Consumer Key: '%s'" % validation['consumerKey'])
 
   d['consumer_key'] = validation['consumerKey']
   tmp = 'ovh_conf.tmp'
   f = open(tmp, 'w')
   f.write(template.render(d))
   f.close()
-  print "file written '%s', you have to copy or rename to ovh.conf" % tmp
+  print("file written '%s', you have to copy or rename to ovh.conf" % tmp)
 
 def generate_consumer_key():
   # log with current ovh.conf
@@ -106,15 +117,17 @@ def generate_consumer_key():
   # Request token
   validation = client.request_consumerkey(access_rules)
 
-  print "Please visit %s to authenticate" % validation['validationUrl']
+  print("Please visit %s to authenticate" % validation['validationUrl'])
   raw_input("and press Enter to continue...")
 
   # Print nice welcome message
-  print "Welcome", client.get('/me')['firstname']
-  print "Here is your Consumer Key: '%s'" % validation['consumerKey']
+  print("Welcome", client.get('/me')['firstname'])
+  print("Here is your Consumer Key: '%s'" % validation['consumerKey'])
 
   return validation['consumerKey']
 
 if __name__ == '__main__':
-  generate_consumer_key()
+  #consumer_key = generate_consumer_key()
+  consumer_key = sys.argv[1]
+  update_consumer_key('ovh.conf', consumer_key)
 
