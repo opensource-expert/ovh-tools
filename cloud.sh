@@ -28,7 +28,7 @@ fi
 if [[ "$1" == "help" || "$1" == "--help" ]]
 then
   # list case entries and functions
-  grep -E '^([a-z_]+\(\)| +[a-z_-]+\))' $me | sed -e 's/() {//' -e 's/)$//'
+  grep -E '^([a-z_]+\(\)| +[a-z_|-]+\))' $me | sed -e 's/() {//' -e 's/)$//'
   exit 0
 fi
 
@@ -93,19 +93,33 @@ create_instance() {
   local snap=$2
   local sshkey=$3
   local hostname=$4
+  local init_script=$5
 
   #flavor_name=sp-30-ssd
   flavor_name=vps-ssd-1
   flavor_id=$(get_flavor $p $flavor_name)
   #echo "create_instance $flavor_name $flavor_id with snap $snap"
 
-  ovh_cli --format json cloud project $p instance create \
-    --flavorId $flavor_id \
-    --imageId $snap \
-    --monthlyBilling false \
-    --name $hostname \
-    --region GRA1 \
-    --sshKeyId $sshkey
+  if [[ ! -z "$init_script" && -e "$init_script" ]]
+  then
+    ovh_cli --format json cloud project $p instance create \
+      --flavorId $flavor_id \
+      --imageId $snap \
+      --monthlyBilling false \
+      --name $hostname \
+      --region GRA1 \
+      --sshKeyId $sshkey \
+      --userData "$(cat $init_script)"
+  else
+    ovh_cli --format json cloud project $p instance create \
+      --flavorId $flavor_id \
+      --imageId $snap \
+      --monthlyBilling false \
+      --name $hostname \
+      --region GRA1 \
+      --sshKeyId $sshkey
+  fi
+
 }
 
 list_instance() {
@@ -126,11 +140,14 @@ rename_instance() {
 get_instance_status() {
   local p=$1
   local i=$2
-  # $3 full summary of a named instance
+  # $3 == full : full json output
+
   if [[ -z "$i" ]]
   then
-    # list all in json
-    ovh_cli --format json  cloud project $p instance | jq .
+    # list all in text format (ip is not ordered, so it could be the private one)
+    # See list_instance
+    ovh_cli --format json  cloud project $p instance \
+      | jq -r '.[]|.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
   elif [[ ! -z "$i" && -z "$3" ]]
   then
     # list summary in text
@@ -139,22 +156,26 @@ get_instance_status() {
   elif [[ ! -z "$i" && "$3" == full ]]
   then
     # full summary in json for the given instance
-    ovh_cli --format json  cloud project $p instance $i
+    ovh_cli --format json cloud project $p instance $i
   fi
 }
 
+# output json
 list_sshkeys() {
   local p=$1
   ovh_cli --format json cloud project $p sshkey
 }
 
+# output text
 get_sshkeys() {
   local p=$1
   local name=$2
   if [[ ! -z "$name" ]]
   then
+    # only one id
     list_sshkeys $p  | jq -r ".[]|select(.name == \"$name\").id"
   else
+    # list all
     list_sshkeys $p | jq -r '.[]|.id+" "+.name'
   fi
 }
@@ -410,7 +431,7 @@ function main() {
       userkey=$3
       get_sshkeys $proj $userkey
     ;;
-    list_instance)
+    list_instance|list)
       list_instance $proj
     ;;
     rename)
