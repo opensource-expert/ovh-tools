@@ -88,6 +88,7 @@ get_flavor() {
   fi
 }
 
+# output json
 create_instance() {
   local p=$1
   local snap=$2
@@ -95,13 +96,16 @@ create_instance() {
   local hostname=$4
   local init_script=$5
 
-  #flavor_name=sp-30-ssd
-  flavor_name=vps-ssd-1
+  if [[ -z "$flavor_name" ]]
+  then
+    # you can define it in cloud.conf
+    flavor_name=vps-ssd-1
+  fi
   flavor_id=$(get_flavor $p $flavor_name)
-  #echo "create_instance $flavor_name $flavor_id with snap $snap"
 
   if [[ ! -z "$init_script" && -e "$init_script" ]]
   then
+    # with an init_script, added in json so it is parsable
     ovh_cli --format json cloud project $p instance create \
       --flavorId $flavor_id \
       --imageId $snap \
@@ -109,7 +113,8 @@ create_instance() {
       --name $hostname \
       --region GRA1 \
       --sshKeyId $sshkey \
-      --userData "$(cat $init_script)"
+      --userData "$(cat $init_script)" \
+        | jq ". + {\"init_script\" : \"$init_script\"}"
   else
     ovh_cli --format json cloud project $p instance create \
       --flavorId $flavor_id \
@@ -119,7 +124,6 @@ create_instance() {
       --region GRA1 \
       --sshKeyId $sshkey
   fi
-
 }
 
 list_instance() {
@@ -338,6 +342,22 @@ loadconf() {
     return 1
 }
 
+set_flavor() {
+  local p=$1
+  local flavor_name=$2
+
+  local flavor_id=$(get_flavor $p $flavor_name)
+  if [[ -z "$flavor_id" ]]
+  then
+    echo "error: '$flavor_name' seems not to be a valid flavor"
+    echo "use: '$me call get_flavor $p' to list all flavor"
+    return 1
+  else
+    write_conf "$CONFFILE" "flavor_name=$flavor_name"
+    return 0
+  fi
+}
+
 call_func() {
   # auto detect functions name loop
   local func="$1"
@@ -351,6 +371,7 @@ call_func() {
     then
       # call the matching action with command line parameter
       eval "$f $@"
+      r=$?
       found=1
       break
     fi
@@ -359,8 +380,10 @@ call_func() {
   if [[ $found -eq 0 ]]
   then
     echo "unknown func: '$func'"
-    exit 1
+    return 1
   fi
+
+  return $r
 }
 
 find_image() {
@@ -386,15 +409,17 @@ function main() {
   fi
 
   case $action in
-    get_snap)
+    list_snap|get_snap)
       list_snapshot $proj
     ;;
     create)
       snap=$3
       sshkey=$(get_sshkeys $proj sylvain)
       hostname=$4
+      init_script=$5
+
       tmp=/dev/shm/create_$hostname.$$
-      create_instance $proj $snap $sshkey $hostname | tee $tmp
+      create_instance $proj $snap $sshkey $hostname $init_script | tee $tmp
       instance=$(jq -r '.id' < $tmp)
       echo instance $instance
       echo "to wait instance: $0 wait $proj $instance"
@@ -427,7 +452,7 @@ function main() {
       done
       rm -f $tmp
     ;;
-    get_ssh)
+    list_ssh|get_ssh)
       userkey=$3
       get_sshkeys $proj $userkey
     ;;
@@ -491,6 +516,16 @@ function main() {
         exit 1
       fi
       ;;
+    set_flavor)
+      flavor_name=$3
+      if set_flavor $proj "$flavor_name"
+      then
+        echo "flavor '$flavor_name' written in '$CONFFILE'"
+        exit 0
+      else
+        exit 1
+      fi
+      ;;
     call)
       # free function call, careful to put args in good order
       call_function=$2
@@ -504,7 +539,7 @@ function main() {
   esac
 }
 
-if [[ $sourced -eq 0  ]]
+if [[ $sourced -eq 0 ]]
 then
   loadconf "$CONFFILE"
   if [[ ! -z "$project_id" ]]
