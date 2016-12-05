@@ -69,22 +69,16 @@ def parse_input():
 
 def update_consumer_key(conffile, consumer_key):
   for line in fileinput.FileInput(conffile, inplace=1):
-# consumer_key=LnjKrXclfc1LkL9VLeVwfTY2XNx6j54c
       if re.match(r'consumer_key=', line):
         line = "consumer_key=%s\n" % consumer_key
       print(line, end='')
 
-def load_ovh_conf(conffile):
-  pass
 
-
-def main():
+def init_app():
   url = "https://eu.api.ovh.com/createApp/"
-  print("go to '%s' and register your app, then paste text here + CTRL-D" % url)
-  d = parse_input()
-  env = Environment(loader=FileSystemLoader('./templates'))
-  template = env.get_template('ovh_t.conf')
+  print("go to '%s' and register your app, then copy/paste text here + CTRL-D" % url)
 
+  d = parse_input()
 
   client = ovh.Client(
       endpoint='ovh-eu',
@@ -94,25 +88,20 @@ def main():
   )
 
   # Request token
-  validation = client.request_consumerkey(access_rules)
+  d['consumer_key'] = generate_consumer_key(client)
 
-  print("Please visit %s to authenticate" % validation['validationUrl'])
-  raw_input("and press Enter to continue...")
-
-  # Print nice welcome message
-  print("Welcome", client.get('/me')['firstname'])
-  #print("Here is your Consumer Key: '%s'" % validation['consumerKey'])
-
-  d['consumer_key'] = validation['consumerKey']
+  env = Environment(loader=FileSystemLoader('./templates'))
+  template = env.get_template('ovh_t.conf')
   tmp = 'ovh_conf.tmp'
   f = open(tmp, 'w')
   f.write(template.render(d))
   f.close()
   print("file written '%s', you have to copy or rename to ovh.conf" % tmp)
 
-def generate_consumer_key():
-  # log with current ovh.conf
-  client = ovh.Client()
+def generate_consumer_key(client = None):
+  if client == None:
+    # log with current ovh.conf
+    client = ovh.Client()
 
   # Request token
   validation = client.request_consumerkey(access_rules)
@@ -127,7 +116,13 @@ def generate_consumer_key():
   return validation['consumerKey']
 
 if __name__ == '__main__':
-  #consumer_key = generate_consumer_key()
-  consumer_key = sys.argv[1]
-  update_consumer_key('ovh.conf', consumer_key)
+  if sys.argv[1] == 'update_key':
+    # simply write a key in local ovh.conf
+    consumer_key = sys.argv[2]
+    update_consumer_key('ovh.conf', consumer_key)
+  elif sys.argv[1] == 'new' or sys.argv[1] == 'init':
+    init_app()
+  elif sys.argv[1] == 'update':
+    consumer_key = generate_consumer_key()
+    update_consumer_key('ovh.conf', consumer_key)
 
