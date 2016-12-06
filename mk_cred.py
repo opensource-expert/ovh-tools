@@ -72,6 +72,7 @@ def update_consumer_key(conffile, consumer_key):
       if re.match(r'consumer_key=', line):
         line = "consumer_key=%s\n" % consumer_key
       print(line, end='')
+  print("updated in '%s'"%conffile)
 
 
 def init_app():
