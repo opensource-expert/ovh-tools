@@ -6,6 +6,9 @@
 ./cloud.sh call ovh_cli --format json cloud project \$project_id image --osType linux --region GRA1 |jq '.[]|select(.name|test("Deb"))'
 ./cloud.sh call ovh_cli --format json cloud project \$project_id instance create -h
 
+# get public network id
+./cloud.sh call ovh_cli --format json cloud project \$project_id network public | jq -r '.[]|.id'
+
 # project manipulation
 ./cloud.sh call find_image \$project_id Deb
 ./cloud.sh call show_projects
