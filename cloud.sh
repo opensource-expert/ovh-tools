@@ -350,7 +350,8 @@ set_flavor() {
   if [[ -z "$flavor_id" ]]
   then
     echo "error: '$flavor_name' seems not to be a valid flavor"
-    echo "use: '$me call get_flavor $p' to list all flavor"
+    echo "to list all flavor use:"
+    echo "  $me call get_flavor $p"
     return 1
   else
     write_conf "$CONFFILE" "flavor_name=$flavor_name"
@@ -504,6 +505,7 @@ function main() {
     set_all_instance_dns)
       while read i ip hostname
       do
+        echo "set_ip_domain for $hostname"
         set_ip_domain $ip $hostname
       done <<< "$(list_instance $proj)"
       ;;
@@ -517,10 +519,12 @@ function main() {
       fi
       ;;
     set_flavor)
+      previous_flavor=$flavor_name
       flavor_name=$3
+      echo "actual flavor_name $previous_flavor"
       if set_flavor $proj "$flavor_name"
       then
-        echo "flavor '$flavor_name' written in '$CONFFILE'"
+        echo "new flavor '$flavor_name' written in '$CONFFILE'"
         exit 0
       else
         exit 1
@@ -533,7 +537,8 @@ function main() {
       call_func $call_function "$@"
       ;;
     *)
-      echo "free call is now: call $action $@"
+      echo "error: $action not found"
+      echo "free call (project_id added): call $@"
       exit 1
       ;;
   esac
