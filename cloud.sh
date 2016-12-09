@@ -262,7 +262,7 @@ delete_instance() {
 create_snapshot() {
   local p=$1
   local i=$2
-  local snap_name=$3
+  local snap_name="$3"
   ovh_cli cloud project $p instance $i snapshot create \
     --snapshotName "$snap_name"
 }
@@ -472,12 +472,12 @@ function main() {
     ;;
     make_snap)
       instance=$3
-      host=$4
+      host="$4"
       if [[ -z "$host" ]]
       then
         host=$(get_instance_status $proj $instance | awk '{print $3}')
       fi
-      create_snapshot $proj $instance $host
+      create_snapshot $proj $instance "$host"
       ;;
     delete)
       instance=$3
