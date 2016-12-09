@@ -269,7 +269,7 @@ create_snapshot() {
 
 id_is_project() {
   # return a array of project_id, -1 if not found
-  [[ $(ovh_cli --format json cloud project | jq "bsearch(\"$1\")") -ge 0 ]] && return 0
+  ovh_cli --format json cloud project | jq -r . | grep -q "^$1\$" && return 0
   # fail
   return 1
 }
@@ -392,7 +392,7 @@ find_image() {
   local pattern=$2
   ovh_cli --format json cloud project $p image \
     --osType linux --region GRA1 \
-    | jq -r ".[]|select(.name|test(\"$pattern\"))|.id+\" \"+.name"
+    | jq -r ".[]|.id+\" \"+.name" | grep "$pattern"
 }
 
 ###################################### main
@@ -549,7 +549,7 @@ then
   loadconf "$CONFFILE"
   if [[ ! -z "$project_id" ]]
   then
-    if [[ "$1" == 'call' ]]
+    if [[ "$1" == "call" ]]
     then
       main "$@"
     elif id_is_project "$2"
