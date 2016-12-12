@@ -74,6 +74,11 @@ list_snapshot() {
     | jq -r '.[]|.id +" "+.name'
 }
 
+delete_snapshot() {
+  local p=$1
+  local snap_id=$2
+  ovh_cli --format json cloud project $p snapshot $snap_id delete | grep -E '(^|status.*)'
+}
 
 get_flavor() {
   local p=$1
@@ -479,6 +484,10 @@ function main() {
         host=$(get_instance_status $proj $instance | awk '{print $3}')
       fi
       create_snapshot $proj $instance "$host"
+      ;;
+    del_snap)
+      snap_id=$3
+      delete_snapshot $proj $snap_id
       ;;
     delete)
       instance=$3
