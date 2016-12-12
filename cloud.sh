@@ -20,25 +20,25 @@
 [[ $0 != "$BASH_SOURCE" ]] && sourced=1 || sourced=0
 if [[ $sourced -eq 0  ]]
 then
-  me=$(readlink -f $0)
+  ME=$(readlink -f $0)
 else
-  me=$(readlink -f "$BASH_SOURCE")
+  ME=$(readlink -f "$BASH_SOURCE")
 fi
 
 if [[ "$1" == "help" || "$1" == "--help" ]]
 then
   # list case entries and functions
-  grep -E '^([a-z_]+\(\)| +[a-z_|-]+\))' $me | sed -e 's/() {//' -e 's/)$//'
+  grep -E '^([a-z_]+\(\)| +[a-z_|-]+\))' $ME | sed -e 's/() {//' -e 's/)$//'
   exit 0
 fi
 
-mydir=$(dirname $me)
-ovh_clidir=$mydir/../ovh-cli
+SCRIPTDIR=$(dirname $ME)
+ovh_clidir=$SCRIPTDIR/../ovh-cli
 
 # you can "export CONFFILE=some_file" to override
 if [[ -z "$CONFFILE" ]]
 then
-  CONFFILE="$mydir/cloud.conf"
+  CONFFILE="$SCRIPTDIR/cloud.conf"
 fi
 
 ###################################### functions
@@ -73,6 +73,7 @@ list_snapshot() {
   ovh_cli --format json cloud project $p snapshot \
     | jq -r '.[]|.id +" "+.name'
 }
+
 
 get_flavor() {
   local p=$1
@@ -209,10 +210,10 @@ set_ip_domain() {
   # reverse, doesn't work
   #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
   # python wrapper
-  $mydir/ovh_reverse.py $ip ${fqdn#.}.
+  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}.
 
   echo "if forward DNS not yet available for $fqdn"
-  echo "  $mydir/ovh_reverse.py $ip ${fqdn#.}. "
+  echo "  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}. "
 }
 
 # same order as given in list_instance ip, fqdn
@@ -351,7 +352,7 @@ set_flavor() {
   then
     echo "error: '$flavor_name' seems not to be a valid flavor"
     echo "to list all flavor use:"
-    echo "  $me call get_flavor $p"
+    echo "  $ME call get_flavor $p"
     return 1
   else
     write_conf "$CONFFILE" "flavor_name=$flavor_name"
@@ -389,7 +390,7 @@ call_func() {
 
 find_image() {
   local p=$1
-  local pattern=$2
+  local pattern="$2"
   ovh_cli --format json cloud project $p image \
     --osType linux --region GRA1 \
     | jq -r ".[]|.id+\" \"+.name" | grep "$pattern"
@@ -535,6 +536,17 @@ function main() {
       call_function=$2
       shift 2
       call_func $call_function "$@"
+      ;;
+    run)
+      src="$3"
+      # search code loop
+      for f in $src "saved/$3"
+      do
+        if [[ -e "$src" ]] ; then
+          source $src
+          break
+        fi
+      done
       ;;
     *)
       echo "error: $action not found"
