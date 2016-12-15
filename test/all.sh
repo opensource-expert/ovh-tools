@@ -1,3 +1,4 @@
+#!/bin/bash
 # ovh api wrapper
 # internal call with eval \$project_id (sourced from cloud.conf)
 # $project_id is escaped because evaled bu $instance_id is pasted on shell via tmux
@@ -8,6 +9,12 @@
 
 # get public network id
 ./cloud.sh call ovh_cli --format json cloud project \$project_id network public | jq -r '.[]|.id'
+
+./cloud.sh call ovh_cli --format json cloud project \$project_id instance unknown
+
+#snapshot info
+./cloud.sh call ovh_cli --format json cloud project \$project_id snapshot 1a16c40a-c61a-4412-8b3e-83127c9f3132
+./cloud.sh call ovh_cli --format json cloud project \$project_id snapshot | jq -r '.[]|.id+" "+.name+" "+.status'
 
 # project manipulation
 ./cloud.sh call find_image \$project_id Deb
@@ -26,10 +33,20 @@ sshkey=$(./cloud.sh call get_sshkeys \$project_id sylvain)
 # manipulate instances
 ./cloud.sh call list_instance \$project_id
 instance_id=some_id
-./cloud.sh call rename_instance $instance_id NEW_NAME
+# get first instance
+instance_id=$(./cloud.sh status | awk 'NR == 1 {print $1}')
+# named instance
+instance_id=$(./cloud.sh status | awk '/rm.opensource-expert.com/ {print $1}')
+echo $instance_id
+./cloud.sh call rename_instance $instance_id NEW_NAME
 ./cloud.sh call get_instance_status \$project_id
 # or
 ./cloud.sh call get_instance_status \$project_id $instance_id
+# in json
+./cloud.sh call get_instance_status \$project_id $instance_id FULL
+
+# test ACTIVE grep JSON
+./cloud.sh call get_instance_status \$project_id $instance_id FULL | grep '"status": "ACTIVE"'
 
 # ssh keys
 ./cloud.sh call list_sshkeys \$project_id
@@ -58,11 +75,15 @@ cat cloud.conf
 # main commands
 ###############
 ./cloud.sh get_snap
-snapshot_id=some_id_from_get_snap
+snapshot_id=$(./cloud.sh get_snap | awk '/debian-updated-base/ {print $1; exit}')
 ./cloud.sh create $snapshot_id grep2.opensource-expert.com
+
 # works with image too, here debian 8 (from find_image)
+./cloud.sh call find_image \$project_id | awk '/Debian 8/ {print $1}'
+image_id=$(./cloud.sh call find_image \$project_id | awk '/Debian 8/ {print $1}')
+
 ./cloud.sh create 05045d18-6035-4dc1-9d89-259272280392 ssh.opensource-expert.com
-./cloud.sh create 05045d18-6035-4dc1-9d89-259272280392 awk.opensource-expert.com init/init_root_login_OK.sh
+./cloud.sh create $image_id awk.opensource-expert.com init/init_root_login_OK.sh
 ./cloud.sh wait $instance_id
 ./cloud.sh get_ssh
 ./cloud.sh list_instance
@@ -84,3 +105,12 @@ project_id=someproject_id_from_show_projects_or_no_arg
 # consumer_key
 ./mk_cred.py init
 ./mk_cred.py update
+
+# wait
+instance=$(./cloud.sh status | awk '/rm.open/ { print $1}')
+echo $instance
+./cloud.sh delete $instance
+./cloud.sh run saved/test_wait.sh
+./cloud.sh wait $instance
+./cloud.sh wait wrong
+./cloud.sh status $instance

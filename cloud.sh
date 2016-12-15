@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# some public cloud wrapper
+# OVH public cloud API wrapper
 #
 # require https://github.com/yadutaf/ovh-cli + pip requirement + auth
 # require jq (c++ json parser for bash)
@@ -14,6 +14,7 @@
 #  ./cloud.sh ACTION [project_id] param ...
 #  ./cloud.sh help          list action and functions
 #
+# See: test/all.sh for many examples
 
 
 ########################################################  init
@@ -33,13 +34,19 @@ then
 fi
 
 SCRIPTDIR=$(dirname $ME)
-ovh_clidir=$SCRIPTDIR/../ovh-cli
+OVH_CLIDIR=$SCRIPTDIR/../ovh-cli
 
 # you can "export CONFFILE=some_file" to override
+# usefull for testing
 if [[ -z "$CONFFILE" ]]
 then
   CONFFILE="$SCRIPTDIR/cloud.conf"
 fi
+
+# in seconds
+MAX_WAIT=210
+SLEEP_DELAY=2
+TMP_DIR=/dev/shm
 
 ###################################### functions
 
@@ -47,7 +54,7 @@ fi
 # we need to change??
 # here fixed nearby
 ovh_cli() {
-  cd $ovh_clidir
+  cd $OVH_CLIDIR
   ./ovh-eu "$@"
   cd - > /dev/null
 }
@@ -150,7 +157,7 @@ rename_instance() {
 get_instance_status() {
   local p=$1
   local i=$2
-  # $3 == full : full json output
+  # $3 == FULL : full json output
 
   if [[ -z "$i" ]]
   then
@@ -163,7 +170,7 @@ get_instance_status() {
     # list summary in text
     ovh_cli --format json  cloud project $p instance $i \
       | jq -r '.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
-  elif [[ ! -z "$i" && "$3" == full ]]
+  elif [[ ! -z "$i" && "$3" == "FULL" ]]
   then
     # full summary in json for the given instance
     ovh_cli --format json cloud project $p instance $i
@@ -217,7 +224,7 @@ set_ip_domain() {
   # python wrapper
   $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}.
 
-  echo "if forward DNS not yet available for $fqdn"
+  echo "if forward DNS not yet available for $fqdn"
   echo "  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}. "
 }
 
@@ -302,7 +309,7 @@ write_conf() {
   if [[ -e "$conffile" ]]
   then
     # keep old conf change only vars
-    tmp=/dev/shm/cloud_CONFFILE_$$.tmp
+    local tmp=$TMP_DIR/cloud_CONFFILE_$$.tmp
     cp "$conffile" $tmp
     for v in "$@"
     do
@@ -401,6 +408,83 @@ find_image() {
     | jq -r ".[]|.id+\" \"+.name" | grep "$pattern"
 }
 
+wait_for_instance() {
+  local p=$1
+  local instance=$2
+  local max=$3
+
+  if [[ -z "$max" ]] ; then
+    echo "no max"
+    return 1
+  fi
+
+  local startt=$SECONDS
+  local tmp=$TMP_DIR/wait_$instance.$$
+  while true
+  do
+    if [[ $(( SECONDS - startt )) -gt $max ]] ; then
+      echo "timeout reached: $max"
+      break
+    fi
+
+    if get_instance_status $p $instance FULL | tee $tmp \
+        | grep -q '"status": "ACTIVE"' ; then
+      echo OK
+      jq -r '.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status' < $tmp
+      break
+    fi
+
+    # wrong id ?
+    if grep "Object not found" < $tmp ; then
+      echo "wrong id: '$instance'"
+      return 1
+    fi
+
+    echo -n '.'
+    sleep $SLEEP_DELAY
+  done
+
+  if [[ $(wc -l < $tmp) -eq 0 ]] ; then
+    rm -f $tmp
+    return 1
+  fi
+
+  local ip=$(jq -r '(.ipAddresses[]|select(.type=="public")).ip' < $tmp)
+  local sshuser=$(jq -r '.image.user' < $tmp)
+  rm -f $tmp
+
+  if [[ -z "$ip" || -z "$sshuser" ]] ; then
+    echo "internal error, no ip found or no sshuser"
+    return 1
+  fi
+
+  # also wait until we can ssh to it…
+  while true
+  do
+    if [[ $(( SECONDS - startt )) -gt $max ]] ; then
+      echo "ssh timeout reached: $max"
+      break
+    fi
+
+    if ssh -q -o StrictHostKeyChecking=no $sshuser@$ip \
+      "echo \"logged IN \$USER@$ip \$(hostname -f)\" $((SECONDS - startt ))s" \
+          2> /dev/null; then
+      return 0
+    fi
+
+    echo -n '.'
+    sleep $SLEEP_DELAY
+  done
+
+  return 1
+}
+
+# cannot be called when sourced
+fail() {
+  echo "$*"
+  exit 1
+}
+
 ###################################### main
 
 # prefix 'function' not to be greped with --help
@@ -425,7 +509,7 @@ function main() {
       hostname=$4
       init_script=$5
 
-      tmp=/dev/shm/create_$hostname.$$
+      tmp=$TMP_DIR/create_$hostname.$$
       create_instance $proj $snap $sshkey $hostname $init_script | tee $tmp
       instance=$(jq -r '.id' < $tmp)
       echo instance $instance
@@ -434,30 +518,11 @@ function main() {
     ;;
     wait)
       instance=$3
-      sleep_delay=2
-      max=20
-      i=0
-      tmp=/dev/shm/wait_$instance.$$
-      while true
-      do
-        i=$((i + 1))
-        if [[ $i -gt $max ]]
-        then
-          echo "max count reach: $max"
-          break
-        fi
-
-        if get_instance_status $proj $instance | tee $tmp | grep -q ACTIVE
-        then
-          echo OK
-          cat $tmp
-          break
-        fi
-
-        echo -n '.'
-        sleep $sleep_delay
-      done
-      rm -f $tmp
+      if wait_for_instance $proj $instance $MAX_WAIT ; then
+        echo "OK"
+      else
+        fail "timeout $MAX_WAIT or error, instance is unavailable"
+      fi
     ;;
     list_ssh|get_ssh)
       userkey=$3
