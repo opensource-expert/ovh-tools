@@ -16,6 +16,19 @@
 ./cloud.sh call ovh_cli --format json cloud project \$project_id snapshot 1a16c40a-c61a-4412-8b3e-83127c9f3132
 ./cloud.sh call ovh_cli --format json cloud project \$project_id snapshot | jq -r '.[]|.id+" "+.name+" "+.status'
 
+# domain ip info read awk
+instance=$(./cloud.sh status | awk '/rm.open/ { print $1}')
+read ip hostname <<< $(./cloud.sh call list_instance \$project_id $instance | awk '{ print $2,$3 }')
+echo ip=$ip hostname=$hostname
+./cloud.sh call set_ip_domain $ip $hostname
+
+# with jq
+mytmp=/dev/shm/cloud_status.tmp
+./cloud.sh call get_instance_status \$project_id $instance FULL > $mytmp
+ip=$(jq -r '(.ipAddresses[]|select(.type=="public")).ip' < $mytmp)
+hostname=$(jq -r '.name' < $mytmp)
+./cloud.sh call set_ip_domain $ip $hostname
+
 # project manipulation
 ./cloud.sh call find_image \$project_id Deb
 ./cloud.sh call show_projects
