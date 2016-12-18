@@ -40,6 +40,7 @@ OVH_CLIDIR=$SCRIPTDIR/../ovh-cli
 # usefull for testing
 if [[ -z "$CONFFILE" ]]
 then
+  # default value
   CONFFILE="$SCRIPTDIR/cloud.conf"
 fi
 
@@ -56,11 +57,13 @@ TMP_DIR=/dev/shm
 ovh_cli() {
   cd $OVH_CLIDIR
   ./ovh-eu "$@"
+  local r=$?
   cd - > /dev/null
+  return $r
 }
 
 show_projects() {
-    clouds=$(ovh_cli --format json cloud project | jq -r .[])
+    local clouds=$(ovh_cli --format json cloud project | jq -r .[])
     for c in $clouds
     do
         project=$(ovh_cli --format json cloud project $c | jq -r .description)
@@ -109,12 +112,12 @@ create_instance() {
   local hostname=$4
   local init_script=$5
 
-  if [[ -z "$flavor_name" ]]
+  if [[ -z "$FLAVOR_NAME" ]]
   then
     # you can define it in cloud.conf
-    flavor_name=vps-ssd-1
+    FLAVOR_NAME=vps-ssd-1
   fi
-  flavor_id=$(get_flavor $p $flavor_name)
+  flavor_id=$(get_flavor $p $FLAVOR_NAME)
 
   if [[ ! -z "$init_script" && -e "$init_script" ]]
   then
@@ -367,7 +370,7 @@ set_flavor() {
     echo "  $ME call get_flavor $p"
     return 1
   else
-    write_conf "$CONFFILE" "flavor_name=$flavor_name"
+    write_conf "$CONFFILE" "FLAVOR_NAME=$flavor_name"
     return 0
   fi
 }
@@ -594,12 +597,12 @@ function main() {
       fi
       ;;
     set_flavor)
-      previous_flavor=$flavor_name
-      flavor_name=$3
+      previous_flavor=$FLAVOR_NAME
+      FLAVOR_NAME=$3
       echo "actual flavor_name $previous_flavor"
-      if set_flavor $proj "$flavor_name"
+      if set_flavor $proj "$FLAVOR_NAME"
       then
-        echo "new flavor '$flavor_name' written in '$CONFFILE'"
+        echo "new flavor '$FLAVOR_NAME' written in '$CONFFILE'"
         exit 0
       else
         exit 1

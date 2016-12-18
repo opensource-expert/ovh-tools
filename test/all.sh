@@ -22,6 +22,14 @@ read ip hostname <<< $(./cloud.sh call list_instance \$project_id $instance | aw
 echo ip=$ip hostname=$hostname
 ./cloud.sh call set_ip_domain $ip $hostname
 
+# list instance
+./cloud.sh call ovh_cli --format json cloud project \$project_id instance
+# This credential is not valid
+./cloud.sh call ovh_cli --format json auth current-credential
+
+./cloud.sh call ovh_cli --format json cloud project \$project_id instance \
+    | jq -r '.[]|.id+" "+(.ipAddresses[]|select(.type=="public")).ip+" "+.name'
+
 # with jq
 mytmp=/dev/shm/cloud_status.tmp
 ./cloud.sh call get_instance_status \$project_id $instance FULL > $mytmp
