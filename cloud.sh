@@ -11,7 +11,7 @@
 #
 # Usage:
 #  ./cloud.sh               list projects
-#  ./cloud.sh ACTION [project_id] param ...
+#  ./cloud.sh ACTION [PROJECT_ID] param ...
 #  ./cloud.sh help          list action and functions
 #
 # See: test/all.sh for many examples
@@ -63,12 +63,14 @@ ovh_cli() {
 }
 
 show_projects() {
-    local clouds=$(ovh_cli --format json cloud project | jq -r .[])
-    for c in $clouds
-    do
-        project=$(ovh_cli --format json cloud project $c | jq -r .description)
-        echo "$c $project"
-    done
+  local clouds=$(ovh_cli --format json cloud project | jq -r .[])
+  local r=$?
+  for c in $clouds
+  do
+    project=$(ovh_cli --format json cloud project $c | jq -r .description)
+    echo "$c $project"
+  done
+  return $r
 }
 
 last_snapshot() {
@@ -296,7 +298,7 @@ set_project() {
 
   if id_is_project $p
   then
-    write_conf "$CONFFILE" "project_id=$p"
+    write_conf "$CONFFILE" "PROJECT_ID=$p"
     return 0
   fi
 
@@ -379,9 +381,11 @@ call_func() {
   # auto detect functions name loop
   local func="$1"
   shift
+
   local all_func=$(sed -n '/^[a-zA-Z_]\+(/ s/() {// p' $(readlink -f $0))
   local found=0
   local f
+  local r
   for f in $all_func
   do
     if [[ "$func" == $f ]]
@@ -627,7 +631,7 @@ function main() {
       ;;
     *)
       echo "error: $action not found"
-      echo "free call (project_id added): call $@"
+      echo "free call (PROJECT_ID added): call $@"
       exit 1
       ;;
   esac
@@ -636,21 +640,21 @@ function main() {
 if [[ $sourced -eq 0 ]]
 then
   loadconf "$CONFFILE"
-  if [[ ! -z "$project_id" ]]
+  if [[ ! -z "$PROJECT_ID" ]]
   then
     if [[ "$1" == "call" ]]
     then
       main "$@"
     elif id_is_project "$2"
     then
-      # project_id in CONFFILE but forced on command line
+      # PROJECT_ID in CONFFILE but forced on command line
       main "$@"
     else
       # skip 1 postional parameter
-      main $1 $project_id "${@:2:$#}"
+      main $1 $PROJECT_ID "${@:2:$#}"
     fi
   else
-    # no project_id
+    # no PROJECT_ID
     main "$@"
   fi
   exit $?

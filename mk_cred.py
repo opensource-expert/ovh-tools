@@ -105,7 +105,11 @@ def generate_consumer_key(client = None):
     client = ovh.Client()
 
   # Request token
-  validation = client.request_consumerkey(access_rules)
+  try:
+    validation = client.request_consumerkey(access_rules)
+  except ovh.exceptions.APIError as e:
+    print(e)
+    return None
 
   print("Please visit %s to authenticate" % validation['validationUrl'])
   raw_input("and press Enter to continue...")
@@ -127,5 +131,9 @@ if __name__ == '__main__':
     init_app()
   elif sys.argv[1] == 'update':
     consumer_key = generate_consumer_key()
-    update_consumer_key('ovh.conf', consumer_key)
+    if consumer_key != None:
+      update_consumer_key('ovh.conf', consumer_key)
+    else:
+      print('some error with application key, nothing changed')
+      
 
