@@ -50,3 +50,9 @@ _load_if_OK() {
   [[ ! -z "$FLAVOR_NAME" ]]
 }
 
+@test "find_image with grep" {
+  _load_if_OK
+  r=$(find_image $PROJECT_ID "Debian 8")
+  [[ ! -z "$r" ]]
+  [[ "$r" == "d0e79eb7-5dbe-4ff2-84f9-d5ce26ef074e Debian 8" ]]
+}
