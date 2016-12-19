@@ -117,7 +117,9 @@ def generate_consumer_key(client = None):
   return validation['consumerKey']
 
 if __name__ == '__main__':
-  if sys.argv[1] == 'update_key':
+  if len(sys.argv) == 1:
+    print("no arg, can be: update_key | update | new")
+  elif sys.argv[1] == 'update_key':
     # simply write a key in local ovh.conf
     consumer_key = sys.argv[2]
     update_consumer_key('ovh.conf', consumer_key)
