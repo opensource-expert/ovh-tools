@@ -3,10 +3,13 @@
 # some examples of usage
 #
 # ovh api wrapper
+#
 # internal call with eval \$PROJECT_ID (sourced from cloud.conf)
+#
 # $PROJECT_ID is escaped because evaled but $instance_id is pasted on
 # shell
-# all line can be sent via tmux
+#
+# all line can be sent via tmux, or pasted on a working environment.
 
 # get a OS image id, from cli directly
 ./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID image --osType linux --region GRA1 |jq '.[]|select(.name|test("Deb"))'

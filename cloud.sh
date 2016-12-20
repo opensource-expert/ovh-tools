@@ -11,7 +11,7 @@
 #
 # Usage:
 #  ./cloud.sh               list projects
-#  ./cloud.sh ACTION [project_id] param ...
+#  ./cloud.sh ACTION [PROJECT_ID] param ...
 #  ./cloud.sh help          list action and functions
 #
 # See: test/all.sh for many examples
@@ -26,6 +26,7 @@ else
   ME=$(readlink -f "$BASH_SOURCE")
 fi
 
+# help
 if [[ "$1" == "help" || "$1" == "--help" ]]
 then
   # list case entries and functions
@@ -40,37 +41,50 @@ OVH_CLIDIR=$SCRIPTDIR/../ovh-cli
 # usefull for testing
 if [[ -z "$CONFFILE" ]]
 then
+  # default value
   CONFFILE="$SCRIPTDIR/cloud.conf"
 fi
 
-# in seconds
+# globals can be overridden in $CONFFILE
+# see loadconf()
+
+# delays in seconds
 MAX_WAIT=210
 SLEEP_DELAY=2
+
+# for temporary output on ramdrive
 TMP_DIR=/dev/shm
+
+REGION=GRA1
+DNS_TTL=60
 
 ###################################### functions
 
 # ovh-cli seems to require json def of all api in its own folder,
 # we need to change??
-# here fixed nearby
+# here we find ovh-cli in fixed nearby location
 ovh_cli() {
   cd $OVH_CLIDIR
   ./ovh-eu "$@"
+  local r=$?
   cd - > /dev/null
+  return $r
 }
 
 show_projects() {
-    clouds=$(ovh_cli --format json cloud project | jq -r .[])
-    for c in $clouds
-    do
-        project=$(ovh_cli --format json cloud project $c | jq -r .description)
-        echo "$c $project"
-    done
+  local clouds=$(ovh_cli --format json cloud project | jq -r .[])
+  local r=$?
+  for c in $clouds
+  do
+    project=$(ovh_cli --format json cloud project $c | jq -r .description)
+    echo "$c $project"
+  done
+  return $r
 }
 
 last_snapshot() {
   local p=$1
-  snap=$(ovh_cli --format json cloud project $p snapshot \
+  local snap=$(ovh_cli --format json cloud project $p snapshot \
     | jq -r '.|sort_by(.creationDate)|reverse|.[0].id')
   echo $snap
 }
@@ -84,7 +98,8 @@ list_snapshot() {
 delete_snapshot() {
   local p=$1
   local snap_id=$2
-  ovh_cli --format json cloud project $p snapshot $snap_id delete | grep -E '(^|status.*)'
+  ovh_cli --format json cloud project $p snapshot $snap_id delete \
+    | grep -E '(^|status.*)'
 }
 
 get_flavor() {
@@ -93,10 +108,10 @@ get_flavor() {
 
   if [[ -z "$flavor_name" ]]
   then
-    ovh_cli --format json cloud project $p flavor --region GRA1 \
+    ovh_cli --format json cloud project $p flavor --region $REGION \
       | jq -r '.[]|.id+" "+.name'
   else
-    ovh_cli --format json cloud project $p flavor --region GRA1 \
+    ovh_cli --format json cloud project $p flavor --region $REGION \
       | jq -r ".[]|select(.name == \"$flavor_name\").id"
   fi
 }
@@ -109,12 +124,13 @@ create_instance() {
   local hostname=$4
   local init_script=$5
 
-  if [[ -z "$flavor_name" ]]
+  local myflavor=$FLAVOR_NAME
+  if [[ -z "$myflavor" ]]
   then
     # you can define it in cloud.conf
-    flavor_name=vps-ssd-1
+    myflavor=vps-ssd-1
   fi
-  flavor_id=$(get_flavor $p $flavor_name)
+  local flavor_id=$(get_flavor $p $myflavor)
 
   if [[ ! -z "$init_script" && -e "$init_script" ]]
   then
@@ -124,7 +140,7 @@ create_instance() {
       --imageId $snap \
       --monthlyBilling false \
       --name $hostname \
-      --region GRA1 \
+      --region $REGION \
       --sshKeyId $sshkey \
       --userData "$(cat $init_script)" \
         | jq ". + {\"init_script\" : \"$init_script\"}"
@@ -134,7 +150,7 @@ create_instance() {
       --imageId $snap \
       --monthlyBilling false \
       --name $hostname \
-      --region GRA1 \
+      --region $REGION \
       --sshKeyId $sshkey
   fi
 }
@@ -161,7 +177,8 @@ get_instance_status() {
 
   if [[ -z "$i" ]]
   then
-    # list all in text format (ip is not ordered, so it could be the private one)
+    # list all in text format (ip is not ordered,
+    # so it could be the private one)
     # See list_instance
     ovh_cli --format json  cloud project $p instance \
       | jq -r '.[]|.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
@@ -224,7 +241,7 @@ set_ip_domain() {
   # python wrapper
   $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}.
 
-  echo "if forward DNS not yet available for $fqdn"
+  echo "  if needed: re-set revrses with:"
   echo "  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}. "
 }
 
@@ -241,17 +258,18 @@ set_forward_dns() {
   then
     # must be created
     ovh_cli --format json domain zone $domain record create \
-      --target $ip --ttl 60 --subDomain $subdomain --fieldType A
+      --target $ip --ttl $DNS_TTL --subDomain $subdomain --fieldType A
   else
     ovh_cli --format json domain zone $domain record $record put \
       --target $ip \
-      --ttl 60
+      --ttl $DNS_TTL
   fi
 
+  # flush domain modification
   ovh_cli domain zone $domain refresh post
 }
 
-# for cleanup, unused call it manually
+# for cleanup, unused, call it manually
 delete_dns_record() {
   local fqdn=$1
   local domain=${fqdn#*.}
@@ -293,7 +311,7 @@ set_project() {
 
   if id_is_project $p
   then
-    write_conf "$CONFFILE" "project_id=$p"
+    write_conf "$CONFFILE" "PROJECT_ID=$p"
     return 0
   fi
 
@@ -301,11 +319,14 @@ set_project() {
   return 1
 }
 
+# Usage:
+#   write_conf conffile VAR=value VAR2=value2 DELETE=VAR3 ...
 write_conf() {
   local conffile="$1"
   shift
   # vars $2… formate "var=val" or "DELETE=var_name"
 
+  local v
   if [[ -e "$conffile" ]]
   then
     # keep old conf change only vars
@@ -367,7 +388,7 @@ set_flavor() {
     echo "  $ME call get_flavor $p"
     return 1
   else
-    write_conf "$CONFFILE" "flavor_name=$flavor_name"
+    write_conf "$CONFFILE" "FLAVOR_NAME=$flavor_name"
     return 0
   fi
 }
@@ -376,14 +397,20 @@ call_func() {
   # auto detect functions name loop
   local func="$1"
   shift
+
   local all_func=$(sed -n '/^[a-zA-Z_]\+(/ s/() {// p' $(readlink -f $0))
   local found=0
   local f
+  local r
   for f in $all_func
   do
     if [[ "$func" == $f ]]
     then
       # call the matching action with command line parameter
+      # warning: call somefunc "value separated space" iu not
+      # transmitted as one argument, but splitted in eval
+      # ex: ./cloud.sh call find_image \$PROJECT_ID "Debian 8" (2 results)
+      # differe from: find_image $PROJECT_ID "Debian 8" (1 result)
       eval "$f $@"
       r=$?
       found=1
@@ -404,7 +431,7 @@ find_image() {
   local p=$1
   local pattern="$2"
   ovh_cli --format json cloud project $p image \
-    --osType linux --region GRA1 \
+    --osType linux --region $REGION \
     | jq -r ".[]|.id+\" \"+.name" | grep "$pattern"
 }
 
@@ -427,6 +454,7 @@ wait_for_instance() {
       break
     fi
 
+    # greped on JSON output
     if get_instance_status $p $instance FULL | tee $tmp \
         | grep -q '"status": "ACTIVE"' ; then
       echo OK
@@ -594,12 +622,12 @@ function main() {
       fi
       ;;
     set_flavor)
-      previous_flavor=$flavor_name
-      flavor_name=$3
+      previous_flavor=$FLAVOR_NAME
+      FLAVOR_NAME=$3
       echo "actual flavor_name $previous_flavor"
-      if set_flavor $proj "$flavor_name"
+      if set_flavor $proj "$FLAVOR_NAME"
       then
-        echo "new flavor '$flavor_name' written in '$CONFFILE'"
+        echo "new flavor '$FLAVOR_NAME' written in '$CONFFILE'"
         exit 0
       else
         exit 1
@@ -624,7 +652,7 @@ function main() {
       ;;
     *)
       echo "error: $action not found"
-      echo "free call (project_id added): call $@"
+      echo "free call (PROJECT_ID added): call $@"
       exit 1
       ;;
   esac
@@ -633,21 +661,21 @@ function main() {
 if [[ $sourced -eq 0 ]]
 then
   loadconf "$CONFFILE"
-  if [[ ! -z "$project_id" ]]
+  if [[ ! -z "$PROJECT_ID" ]]
   then
     if [[ "$1" == "call" ]]
     then
       main "$@"
     elif id_is_project "$2"
     then
-      # project_id in CONFFILE but forced on command line
+      # PROJECT_ID in CONFFILE but forced on command line
       main "$@"
     else
       # skip 1 postional parameter
-      main $1 $project_id "${@:2:$#}"
+      main $1 $PROJECT_ID "${@:2:$#}"
     fi
   else
-    # no project_id
+    # no PROJECT_ID
     main "$@"
   fi
   exit $?
