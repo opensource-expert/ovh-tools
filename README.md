@@ -91,7 +91,7 @@ Test credential:
 ### `parse error: Invalid numeric literal at line 1, column 8`
 During `cloud.sh` usage if you get a similar error message.
 
-`jq` is reporting a parse, credential are probaly invalid, check with:
+`jq` is reporting a parse error, credential are probaly invalid, check with:
 
 ~~~
 ./cloud.sh call ovh_cli auth current-credential
