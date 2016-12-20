@@ -1,10 +1,9 @@
 #!/bin/bash
 # cloud.sh saved session
 
-myimage=$(find_image $project_id "Ubuntu 14.04" | awk '{print $1}')
-# global $flavor_name
-flavor_name=eg-7
-mysshkey=$(get_sshkeys $project_id sylvain)
+myimage=$(find_image $PROJECT_ID "Ubuntu 14.04" | awk '{print $1}')
+FLAVOR_NAME=eg-7
+mysshkey=$(get_sshkeys $PROJECT_ID sylvain)
 myinit_script=$SCRIPTDIR/init/init_root_login_OK.sh
 myhostname=ubuntu1404.opensource-expert.com
-create_instance $project_id $myimage $mysshkey $myhostname $myinit_script
+create_instance $PROJECT_ID $myimage $mysshkey $myhostname $myinit_script
