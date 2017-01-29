@@ -92,7 +92,7 @@ last_snapshot() {
 list_snapshot() {
   local p=$1
   ovh_cli --format json cloud project $p snapshot \
-    | jq -r '.[]|.id +" "+.name'
+    | jq -r '.[]|.id +" "+.name+" "+.status'
 }
 
 delete_snapshot() {
