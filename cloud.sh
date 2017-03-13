@@ -159,7 +159,7 @@ list_instance() {
   local p=$1
   # filter on public ip address only
   ovh_cli --format json cloud project $p instance \
-    | jq -r '.[]|.id+" "+(.ipAddresses[]|select(.type=="public")).ip+" "+.name'
+    | show_json_instance many
 }
 
 rename_instance() {
@@ -170,6 +170,8 @@ rename_instance() {
     --instanceName $new_name
 }
 
+
+# more versatile version of list_instance
 get_instance_status() {
   local p=$1
   local i=$2
@@ -177,20 +179,40 @@ get_instance_status() {
 
   if [[ -z "$i" ]]
   then
-    # list all in text format (ip is not ordered,
-    # so it could be the private one)
-    # See list_instance
+    # list all in text format
+    # See Also: list_instance
+    # ipAddresses select IPv4 public only IP
     ovh_cli --format json  cloud project $p instance \
-      | jq -r '.[]|.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
+      | show_json_instance many
   elif [[ ! -z "$i" && -z "$3" ]]
   then
-    # list summary in text
+    # one instance list summary in text
     ovh_cli --format json  cloud project $p instance $i \
-      | jq -r '.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status'
+      | show_json_instance
   elif [[ ! -z "$i" && "$3" == "FULL" ]]
   then
-    # full summary in json for the given instance
+    # $3 == FULL summary in json for the given instance
     ovh_cli --format json cloud project $p instance $i
+  fi
+}
+
+# DRY: format json output
+show_json_instance() {
+  local jq_filter='.id+" "+
+        (
+        .ipAddresses[]|
+          select(.version == 4 and  .type == "public")
+        ).ip+
+        " "+
+        .name+
+        " "+
+        .status'
+
+  if [[ "$1" == "many" ]]
+  then
+    jq -r ".[]|$jq_filter"
+  else
+    jq -r "$jq_filter"
   fi
 }
 
@@ -454,11 +476,12 @@ wait_for_instance() {
       break
     fi
 
-    # greped on JSON output
+    # greped on JSON output because we are going to
+    # extract mainy informations IPv4, sshuser
     if get_instance_status $p $instance FULL | tee $tmp \
         | grep -q '"status": "ACTIVE"' ; then
       echo OK
-      jq -r '.id+" "+.ipAddresses[0].ip+" "+.name+" "+.status' < $tmp
+      show_json_instance < $tmp
       break
     fi
 
@@ -477,7 +500,8 @@ wait_for_instance() {
     return 1
   fi
 
-  local ip=$(jq -r '(.ipAddresses[]|select(.type=="public")).ip' < $tmp)
+  # read IPv4
+  local ip=$(show_json_instance < $tmp | awk '{print $2}')
   local sshuser=$(jq -r '.image.user' < $tmp)
   rm -f $tmp
 
