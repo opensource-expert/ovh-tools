@@ -216,6 +216,13 @@ show_json_instance() {
   fi
 }
 
+# DRY func
+# Usage get_ip_from_json < $tmp_json_input
+get_ip_from_json()
+{
+  show_json_instance | awk '{print $2}'
+}
+
 # output json
 list_sshkeys() {
   local p=$1
@@ -501,7 +508,7 @@ wait_for_instance() {
   fi
 
   # read IPv4
-  local ip=$(show_json_instance < $tmp | awk '{print $2}')
+  local ip=$(get_ip_from_json < $tmp)
   local sshuser=$(jq -r '.image.user' < $tmp)
   rm -f $tmp
 

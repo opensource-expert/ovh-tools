@@ -12,7 +12,7 @@ create_instance $PROJECT_ID $myimage $mysshkey $myhostname $myinit_script \
 instance=$(jq -r '.id' < $mytmp)
 if wait_for_instance $PROJECT_ID $instance 210 ; then
   get_instance_status $PROJECT_ID $instance FULL > $mytmp
-  ip=$(jq -r '(.ipAddresses[]|select(.type=="public")).ip' < $mytmp)
+  ip=$(get_ip_from_json < $mytmp)
   hostname=$(jq -r '.name' < $mytmp)
   set_ip_domain $ip $hostname
 fi
