@@ -245,8 +245,9 @@ get_sshkeys() {
 
 get_domain_record_id() {
   local fqdn=$1
-  local domain=${1#*.}
-  local subdomain=${1%%.*}
+  local domain=$(get_domain $fqdn)
+  local subdomain=${fqdn/.$domain/}
+
   ovh_cli --format json domain zone $domain record \
     --subDomain $subdomain \
     | jq -r '.[0]'
@@ -258,7 +259,7 @@ set_ip_domain() {
   local ip=$1
   local fqdn=$2
 
-  local domain=${fqdn#*.}
+  local domain=$(get_domain $fqdn)
 
   set_forward_dns $ip $fqdn
 
@@ -274,13 +275,24 @@ set_ip_domain() {
   echo "  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}. "
 }
 
+get_domain() {
+  local regexp="\.([a-zA-Z0-9-]+\.[a-z]+)$"
+  if [[ "$1" =~ $regexp ]]
+  then
+    echo ${BASH_REMATCH[1]}
+    return 0
+  else
+    return 1
+  fi
+}
+
 # same order as given in list_instance ip, fqdn
 set_forward_dns() {
   local ip=$1
   local fqdn=$2
+  local domain=$(get_domain $fqdn)
+  local subdomain=${fqdn/.$domain/}
 
-  local domain=${fqdn#*.}
-  local subdomain=${fqdn%%.*}
   local record=$(get_domain_record_id $fqdn)
 
   if [[ -z "$record" || "$record" == null ]]
