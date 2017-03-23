@@ -82,11 +82,17 @@ show_projects() {
   return $r
 }
 
-last_snapshot() {
+# dump all: snapshot-id name in reverse order
+order_snapshots() {
   local p=$1
-  local snap=$(ovh_cli --format json cloud project $p snapshot \
-    | jq -r '.|sort_by(.creationDate)|reverse|.[0].id')
-  echo $snap
+  # sort_by in on some advanced jq binary, it may fail
+  ovh_cli --format json cloud project $p snapshot \
+    | jq -r '.|sort_by(.creationDate)|reverse|.[]|.id+" "+.name'
+}
+
+last_snapshot() {
+  # p as $1
+  order_snapshots $1 | grep "$2" | head -1
 }
 
 list_snapshot() {
@@ -116,7 +122,7 @@ get_flavor() {
   fi
 }
 
-# output json
+# outputs json
 create_instance() {
   local p=$1
   local snap=$2
@@ -177,22 +183,25 @@ get_instance_status() {
   local i=$2
   # $3 == FULL : full json output
 
-  if [[ -z "$i" ]]
+  if [[ "$3" == "FULL" ]]
+  then
+    if [[ "$i" == "ALL" ]]
+    then
+      ovh_cli --format json cloud project $p instance
+    else
+      ovh_cli --format json cloud project $p instance $i
+    fi
+  elif [[ -z "$i" ]]
   then
     # list all in text format
     # See Also: list_instance
     # ipAddresses select IPv4 public only IP
     ovh_cli --format json  cloud project $p instance \
       | show_json_instance many
-  elif [[ ! -z "$i" && -z "$3" ]]
-  then
+  else
     # one instance list summary in text
     ovh_cli --format json  cloud project $p instance $i \
       | show_json_instance
-  elif [[ ! -z "$i" && "$3" == "FULL" ]]
-  then
-    # $3 == FULL summary in json for the given instance
-    ovh_cli --format json cloud project $p instance $i
   fi
 }
 
@@ -611,7 +620,11 @@ function main() {
     status)
       instance=$3
       get_instance_status $proj $instance
-    ;;
+      ;;
+    full_status)
+      instance=$3
+      get_instance_status $proj "$instance" FULL
+      ;;
     make_snap)
       instance=$3
       host="$4"
