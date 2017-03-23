@@ -32,3 +32,10 @@ if wait_for_instance $PROJECT_ID $instance 210 ; then
 fi
 rm $mytmp
 
+# post setup
+if [[ -n "$ip" ]]
+then
+  # empty my ssh/known_hosts
+  ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R vim7.opensource-expert.com
+  source $SCRIPTDIR/saved/assign_domain_to_ip.sh $ip
+fi

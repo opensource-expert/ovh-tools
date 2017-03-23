@@ -92,7 +92,7 @@ order_snapshots() {
 
 last_snapshot() {
   # p as $1
-  order_snapshots $1 | grep "$2" | head -1
+  order_snapshots $1 | grep "$2" | head -1 | awk '{print $1}'
 }
 
 list_snapshot() {
@@ -457,8 +457,8 @@ call_func() {
     if [[ "$func" == $f ]]
     then
       # call the matching action with command line parameter
-      # warning: call somefunc "value separated space" iu not
-      # transmitted as one argument, but splitted in eval
+      # warning: call somefunc "value separated space" is not
+      # transmitted as ONE argument, but splitted during eval
       # ex: ./cloud.sh call find_image \$PROJECT_ID "Debian 8" (2 results)
       # differe from: find_image $PROJECT_ID "Debian 8" (1 result)
       eval "$f $@"
@@ -701,7 +701,7 @@ function main() {
       for f in $src "saved/$3"
       do
         if [[ -e "$src" ]] ; then
-          source $src
+          source $src "${@:4:$#}"
           break
         fi
       done
