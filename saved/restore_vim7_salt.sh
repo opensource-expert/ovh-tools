@@ -15,7 +15,10 @@ FLAVOR_NAME=eg-7
 mytmp=$TMP_DIR/saved_vim7_eg7.$$
 
 # get last image by comment
-myimage=$(last_snapshot $PROJECT_ID vim7)
+#myimage=$(last_snapshot $PROJECT_ID vim7)
+# get first image
+myimage=$(order_snapshots $PROJECT_ID \
+  | grep "vim7" | tail -1 | awk '{print $1}')
 
 # reforce this at the end
 myinit_script=$SCRIPTDIR/init/init_root_login_OK.sh
@@ -37,5 +40,6 @@ if [[ -n "$ip" ]]
 then
   # empty my ssh/known_hosts
   ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R vim7.opensource-expert.com
+  ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $ip
   source $SCRIPTDIR/saved/assign_domain_to_ip.sh $ip
 fi
