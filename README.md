@@ -33,6 +33,8 @@ pip install -r requirements.txt
 ~~~
 git clone https://github.com/yadutaf/ovh-cli.git
 cd ovh-cli/
+pip install wheel
+pip install setuptools
 pip install -r requirements.txt
 # downloads json for API
 ./ovh-eu
@@ -85,6 +87,7 @@ See Python OVH API doc for more details.
 Test credential:
 
 ~~~
+cd ~/ovh-cli
 ./ovh-eu  auth current-credential
 ~~~
 
@@ -94,6 +97,7 @@ During `cloud.sh` usage if you get a similar error message.
 `jq` is reporting a parse error, credential are probaly invalid, check with:
 
 ~~~
+cd ~/ovh-tools
 ./cloud.sh call ovh_cli auth current-credential
 ./cloud.sh call ovh_cli me
 ~~~

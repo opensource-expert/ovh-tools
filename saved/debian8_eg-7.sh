@@ -21,3 +21,11 @@ if wait_for_instance $PROJECT_ID $instance 210 ; then
   set_ip_domain $ip $hostname
 fi
 rm $mytmp
+
+# post setup if success
+if [[ -n "$ip" ]]
+then
+  # empty my ssh/known_hosts
+  ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $myhostname
+  ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $ip
+fi

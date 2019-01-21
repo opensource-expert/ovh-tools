@@ -350,7 +350,7 @@ create_snapshot() {
 
 id_is_project() {
   # return a array of project_id, -1 if not found
-  ovh_cli --format json cloud project | jq -r . | grep -q "^$1\$" && return 0
+  ovh_cli --format json cloud project | jq -r '.[]' | grep -q "^$1\$" && return 0
   # fail
   return 1
 }
