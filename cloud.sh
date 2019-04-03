@@ -114,10 +114,10 @@ get_flavor() {
 
   if [[ -z "$flavor_name" ]]
   then
-    ovh_cli --format json cloud project $p flavor --region $REGION \
-      | jq -r '.[]|.id+" "+.name'
+    ovh_cli --format json cloud project $p flavor \
+      | jq -r '.[]|select(.osType != "windows").id+" "+.name+" "+(.vcpus|tostring)+" CPU "+(.ram|tostring)+" Mo"'
   else
-    ovh_cli --format json cloud project $p flavor --region $REGION \
+    ovh_cli --format json cloud project $p flavor \
       | jq -r ".[]|select(.name == \"$flavor_name\").id"
   fi
 }
@@ -688,6 +688,10 @@ function main() {
       else
         exit 1
       fi
+      ;;
+    list_flavor)
+      get_flavor $proj
+      exit 0
       ;;
     call)
       # free function call, careful to put args in good order
