@@ -9,10 +9,35 @@
 # and create a consumer_key with ../ovh-cli/create-consumer-key.py
 # store all OVH api credential in ovh.conf
 #
+# all call can be prefixed with a PROJECT_ID: ./cloud.sh ACTION [PROJECT_ID] param ...
+#
 # Usage:
-#  ./cloud.sh               list projects
-#  ./cloud.sh ACTION [PROJECT_ID] param ...
-#  ./cloud.sh help          list action and functions
+#  ./cloud.sh [show_projects]
+#  ./cloud.sh help
+#  ./cloud.sh snap_list|get_snap|snapshot_list
+#  ./cloud.sh create IMAGE_ID HOSTNAME
+#  ./cloud.sh wait INSTANCE_ID
+#  ./cloud.sh list_ssh|get_ssh
+#  ./cloud.sh instance_list|list
+#  ./cloud.sh rename INSTANCE_ID NEW_NAME
+#  ./cloud.sh status [INSTANCE_ID]
+#  ./cloud.sh full_status|status_full [INSTANCE_ID]
+#  ./cloud.sh make_snap INSTANCE_ID [HOSTNAME]
+#  ./cloud.sh del_snap SNAPSHOT_ID
+#  ./cloud.sh delete INSTANCE_ID...
+#  ./cloud.sh set_all_instance_dns
+#  ./cloud.sh set_project PROJECT_ID
+#  ./cloud.sh set_flavor FLAVOR_NAME
+#  ./cloud.sh list_flavor|flavor_list
+#  ./cloud.sh call FUNCTION_NAME [AGRS...]
+#  ./cloud.sh run SAVED_SCRIPT
+#
+#
+# Actions:
+#   show_projects  list projects for the current credential
+#   help           list action and functions
+
+# The line above, must be kept empty for extract_usage()
 #
 # See: test/all.sh for many examples
 
@@ -27,10 +52,16 @@ else
 fi
 
 # help
+extract_usage() {
+   sed -n -e '/^# Usage:/,/^$/ s/^# \?//p' < $0
+}
 if [[ "$1" == "help" || "$1" == "--help" ]]
 then
   # list case entries and functions
-  grep -E '^([a-z_]+\(\)| +[a-z_|-]+\))' $ME | sed -e 's/() {//' -e 's/)$//'
+  extract_usage
+  echo
+  echo "List of callable functions:"
+  grep -E '^([a-z_]+\(\))' $ME | sed -e 's/() {//' -e 's/)$//' -e 's/^/   /'
   exit 0
 fi
 
@@ -55,10 +86,15 @@ SLEEP_DELAY=2
 # for temporary output on ramdrive
 TMP_DIR=/dev/shm
 
-REGION=GRA1
+LOGFILE=./my.log
+
+# DEFAULTS
+REGION=GRA5
 DNS_TTL=60
+DEFAULT_FLAVOR=s1-8
 
 ###################################### functions
+
 
 # ovh-cli seems to require json def of all api in its own folder,
 # we need to change??
@@ -68,16 +104,41 @@ ovh_cli() {
   ./ovh-eu "$@"
   local r=$?
   cd - > /dev/null
+  log "$@ ==> $r"
   return $r
+}
+
+log() {
+  if [[ -n $LOGFILE ]]
+  then
+    echo "$(date "+%Y-%m-%d_%H:%M:%S"): $*" >> $LOGFILE
+  fi
+}
+
+
+# Usage: color_output "grep_pattern"
+# dont filter output, only colorize tha grep_pattern
+color_output() {
+  if [[ -n $1 ]]
+  then
+    # grep is a trick to colorize the current project in cloud.conf
+    # this grep wont filter output, only colorize
+    grep --color -E "(^|$1)"
+  else
+    cat
+  fi
 }
 
 show_projects() {
   local clouds=$(ovh_cli --format json cloud project | jq -r .[])
   local r=$?
+  local project
+  local c
+
   for c in $clouds
   do
     project=$(ovh_cli --format json cloud project $c | jq -r .description)
-    echo "$c $project"
+    echo "$c $project" | color_output "$PROJECT_ID"
   done
   return $r
 }
@@ -87,7 +148,8 @@ order_snapshots() {
   local p=$1
   # sort_by in on some advanced jq binary, it may fail
   ovh_cli --format json cloud project $p snapshot \
-    | jq -r '.|sort_by(.creationDate)|reverse|.[]|.id+" "+.name'
+    | jq -r '.|sort_by(.creationDate)|reverse|.[]|
+      .id+" "+.name+" "+.region'
 }
 
 last_snapshot() {
@@ -95,10 +157,10 @@ last_snapshot() {
   order_snapshots $1 | grep "$2" | head -1 | awk '{print $1}'
 }
 
-list_snapshot() {
+snapshot_list() {
   local p=$1
   ovh_cli --format json cloud project $p snapshot \
-    | jq -r '.[]|.id +" "+.name+" "+.status'
+    | jq -r '.[]|.id +" "+.name+" "+.status+" "+.region'
 }
 
 delete_snapshot() {
@@ -111,21 +173,28 @@ delete_snapshot() {
 get_flavor() {
   local p=$1
   local flavor_name=$2
+  local region=$3
 
   if [[ -z "$flavor_name" ]]
   then
     ovh_cli --format json cloud project $p flavor \
-      | jq -r '.[]|select(.osType != "windows").id+" "+.name+" "+(.vcpus|tostring)+" CPU "+(.ram|tostring)+" Mo"'
+      | jq -r '.[]|select(.osType != "windows")
+          .id+" "+.name+" "+(.vcpus|tostring)+" CPU "+(.ram|tostring)+" Mo "+.region'
   else
+    if [[ -z $region ]]
+    then
+      region=$REGION
+    fi
+    # must return a single flavor for a region
     ovh_cli --format json cloud project $p flavor \
-      | jq -r ".[]|select(.name == \"$flavor_name\").id"
+      | jq -r ".[]|select(.name == \"$flavor_name\" and .region == \"$region\").id"
   fi
 }
 
 # outputs json
 create_instance() {
   local p=$1
-  local snap=$2
+  local image_id=$2
   local sshkey=$3
   local hostname=$4
   local init_script=$5
@@ -134,7 +203,7 @@ create_instance() {
   if [[ -z "$myflavor" ]]
   then
     # you can define it in cloud.conf
-    myflavor=vps-ssd-1
+    myflavor=$DEFAULT_FLAVOR
   fi
   local flavor_id=$(get_flavor $p $myflavor)
 
@@ -143,9 +212,9 @@ create_instance() {
     # with an init_script, added in json so it is parsable
     ovh_cli --format json cloud project $p instance create \
       --flavorId $flavor_id \
-      --imageId $snap \
+      --imageId $image_id \
       --monthlyBilling false \
-      --name $hostname \
+      --name "$hostname" \
       --region $REGION \
       --sshKeyId $sshkey \
       --userData "$(cat $init_script)" \
@@ -153,15 +222,15 @@ create_instance() {
   else
     ovh_cli --format json cloud project $p instance create \
       --flavorId $flavor_id \
-      --imageId $snap \
+      --imageId $image_id \
       --monthlyBilling false \
-      --name $hostname \
+      --name "$hostname" \
       --region $REGION \
       --sshKeyId $sshkey
   fi
 }
 
-list_instance() {
+instance_list() {
   local p=$1
   # filter on public ip address only
   ovh_cli --format json cloud project $p instance \
@@ -171,13 +240,12 @@ list_instance() {
 rename_instance() {
   local p=$1
   local instanceId=$2
-  local new_name=$3
+  local new_name="$3"
   ovh_cli --format json cloud project $p instance $2 put \
-    --instanceName $new_name
+    --instanceName "$new_name"
 }
 
-
-# more versatile version of list_instance
+# more versatile version of instance_list
 get_instance_status() {
   local p=$1
   local i=$2
@@ -194,7 +262,7 @@ get_instance_status() {
   elif [[ -z "$i" ]]
   then
     # list all in text format
-    # See Also: list_instance
+    # See Also: instance_list
     # ipAddresses select IPv4 public only IP
     ovh_cli --format json  cloud project $p instance \
       | show_json_instance many
@@ -206,16 +274,27 @@ get_instance_status() {
 }
 
 # DRY: format json output
+# this filter JSON ouput for bash with some fields
+# Usage: 
+#   json_input | show_json_instance many  => fister output for a list
+#   json_input | show_json_instance       => fister output for a single instance
+#
+# field Order is important
+#  id ip  name status region flavor
 show_json_instance() {
+
+  # filter IPv4
+  # get flavor through planCode first part as present in both JSON
   local jq_filter='.id+" "+
         (
         .ipAddresses[]|
           select(.version == 4 and  .type == "public")
-        ).ip+
-        " "+
-        .name+
-        " "+
-        .status'
+        ).ip
+        +" "+.name
+        +" "+.status
+        +" "+.region
+        +" "+(.planCode|split(".")[0])
+        '
 
   if [[ "$1" == "many" ]]
   then
@@ -227,8 +306,7 @@ show_json_instance() {
 
 # DRY func
 # Usage get_ip_from_json < $tmp_json_input
-get_ip_from_json()
-{
+get_ip_from_json() {
   show_json_instance | awk '{print $2}'
 }
 
@@ -262,7 +340,8 @@ get_domain_record_id() {
     | jq -r '.[0]'
 }
 
-# same order as given in list_instance ip, fqdn
+# set forward and reverse DNS via API
+# same order as given in instance_list: ip, fqdn
 # instance needs to be ACTIVE and have an IP
 set_ip_domain() {
   local ip=$1
@@ -275,7 +354,7 @@ set_ip_domain() {
   # wait a bit
   sleep 1
 
-  # reverse, doesn't work
+  # reverse, doesn't work in ovh_cli
   #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
   # python wrapper
   $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}.
@@ -295,7 +374,9 @@ get_domain() {
   fi
 }
 
-# same order as given in list_instance ip, fqdn
+
+# update or set a forward DNS record
+# parameter must have the same order as given in instance_list: ip fqdn
 set_forward_dns() {
   local ip=$1
   local fqdn=$2
@@ -359,6 +440,7 @@ id_is_project() {
 set_project() {
   local p=$1
 
+  # check if the project_id exists
   if id_is_project $p
   then
     write_conf "$CONFFILE" "PROJECT_ID=$p"
@@ -374,7 +456,7 @@ set_project() {
 write_conf() {
   local conffile="$1"
   shift
-  # vars $2… formate "var=val" or "DELETE=var_name"
+  # vars $2... format "var=val" or "DELETE=var_name"
 
   local v
   if [[ -e "$conffile" ]]
@@ -485,6 +567,10 @@ find_image() {
     | jq -r ".[]|.id+\" \"+.name" | grep "$pattern"
 }
 
+region_list() {
+   ovh_cli --format json cloud project $PROJECT_ID region | jq -r '.[]'
+}
+
 wait_for_instance() {
   local p=$1
   local instance=$2
@@ -580,20 +666,21 @@ function main() {
   fi
 
   case $action in
-    list_snap|get_snap)
-      list_snapshot $proj
+    snap_list|get_snap|snapshot_list)
+      snapshot_list $proj
     ;;
     create)
-      snap=$3
+      #image_id can also be a snapshot_id
+      image_id=$3
       sshkey=$(get_sshkeys $proj sylvain)
       hostname=$4
       init_script=$5
 
       tmp=$TMP_DIR/create_$hostname.$$
-      create_instance $proj $snap $sshkey $hostname $init_script | tee $tmp
+      create_instance $proj $image_id $sshkey $hostname $init_script | tee $tmp
       instance=$(jq -r '.id' < $tmp)
-      echo instance $instance
-      echo "to wait instance: $0 wait $proj $instance"
+      echo "instance $instance"
+      echo "# to wait instance: $0 wait $proj $instance"
       rm -f $tmp
     ;;
     wait)
@@ -608,8 +695,8 @@ function main() {
       userkey=$3
       get_sshkeys $proj $userkey
     ;;
-    list_instance|list)
-      list_instance $proj
+    instance_list|list)
+      instance_list $proj
     ;;
     rename)
       instance=$3
@@ -621,7 +708,7 @@ function main() {
       instance=$3
       get_instance_status $proj $instance
       ;;
-    full_status)
+    full_status|status_full)
       instance=$3
       get_instance_status $proj "$instance" FULL
       ;;
@@ -655,7 +742,7 @@ function main() {
           do
             echo "deleting $i $hostname…"
             delete_instance $proj $i
-          done <<< "$(list_instance $proj)"
+          done <<< "$(instance_list $proj)"
         else
           delete_instance $proj $instance
         fi
@@ -666,7 +753,7 @@ function main() {
       do
         echo "set_ip_domain for $hostname"
         set_ip_domain $ip $hostname
-      done <<< "$(list_instance $proj)"
+      done <<< "$(instance_list $proj)"
       ;;
     set_project)
       if set_project $proj
@@ -689,7 +776,7 @@ function main() {
         exit 1
       fi
       ;;
-    list_flavor)
+    list_flavor|flavor_list)
       get_flavor $proj
       exit 0
       ;;

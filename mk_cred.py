@@ -2,10 +2,24 @@
 # -*- coding: utf-8 -*-
 # vim: set et ts=2 sw=2 sts=2:
 #
-# Usage: python mk_cred.py < copy_paste_credential.txt
-# copy_paste_credential.txt is the text ouputed by:
-# https://eu.api.ovh.com/createApp/
+# Usage:
+#   python mk_cred.py < copy_paste_credential.txt
+#   python mk_cred.py update
+#   python mk_cred.py new | init
+#   python mk_cred.py update_key CONSUMER_KEY
+#   python mk_cred.py bash_export
 #
+# actions:
+#
+# stdin parser
+#   copy_paste_credential.txt is the text ouputed by:
+#   https://eu.api.ovh.com/createApp/
+#
+# NO_ACTION    Displays help message
+# new          Create a new credential file
+# update       Request current credential update with the local ovh.conf
+# update_key   Update the local ovh.conf with CONSUMER_KEY
+# bash_export  Output ovh.conf as bash export VARIABLES
 
 from __future__ import print_function
 
@@ -14,6 +28,7 @@ import re
 import os
 import fileinput
 import ovh
+from ovh import config
 
 # pip install --user Jinja2
 from jinja2 import Environment, FileSystemLoader
@@ -120,6 +135,36 @@ def generate_consumer_key(client = None):
 
   return validation['consumerKey']
 
+
+def bash_export(client = None):
+  d = {
+    'application_key' : None,
+    'application_secret' : None,
+    'consumer_key' : None
+  }
+
+  # format for https://github.com/toorop/ovh-cli
+  for k in d.keys():
+    print("export OVH_%s=%s" % (
+        k.upper(),
+        ovh.config.config.get('ovh-eu', k)
+        )
+      )
+
+  print("# format fo https://github.com/denouche/ovh-api-bash-client")
+  d = {
+    'application_key' : 'AK',
+    'application_secret' : 'AS',
+    'consumer_key' : 'CK'
+  }
+  for k in d.keys():
+    print("export %s=%s" % (
+        d[k],
+        ovh.config.config.get('ovh-eu', k)
+        )
+      )
+
+################################## main
 if __name__ == '__main__':
   if len(sys.argv) == 1:
     print("no arg, can be: update_key | update | new")
@@ -135,5 +180,6 @@ if __name__ == '__main__':
       update_consumer_key('ovh.conf', consumer_key)
     else:
       print('some error with application key, nothing changed')
-      
+  elif sys.argv[1] == 'bash_export':
+    bash_export()
 

@@ -100,14 +100,22 @@ cat cloud.conf
 
 # main commands
 ###############
+
+# list our snapshot
 ./cloud.sh get_snap
+
+# get a single snapshot_id
 snapshot_id=$(./cloud.sh get_snap | awk '/debian-updated-base/ {print $1; exit}')
+
+# recreate a VM with this snapshot_id (using DEFAULTS in cloud.conf)
 ./cloud.sh create $snapshot_id grep2.opensource-expert.com
 
-# works with image too, here debian 8 (from find_image)
-./cloud.sh call find_image \$PROJECT_ID | awk '/Debian 8/ {print $1}'
-image_id=$(./cloud.sh call find_image \$PROJECT_ID | awk '/Debian 8/ {print $1}')
+# works with OS image too, here last debian (from find_image)
+# Warning: many image may match a filter string
+./cloud.sh call find_image \$PROJECT_ID | awk '/Debian 9$/ {print $1}'
+image_id=$(./cloud.sh call find_image \$PROJECT_ID | awk '/Debian 9$/ {print $1}')
 
+#
 ./cloud.sh create 05045d18-6035-4dc1-9d89-259272280392 ssh.opensource-expert.com
 ./cloud.sh create $image_id awk.opensource-expert.com init/init_root_login_OK.sh
 ./cloud.sh wait $instance_id
