@@ -8,6 +8,7 @@
 # shell
 # all line can be sent via tmux
 
+############ direct call to ovh_cli wrapper
 # get a OS image id, from cli directly
 ./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID image --osType linux --region GRA1 |jq '.[]|select(.name|test("Deb"))'
 ./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID instance create -h
@@ -15,32 +16,44 @@
 # get public network id
 ./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID network public | jq -r '.[]|.id'
 
-./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID instance unknown
+# list all running instances in the current project
+./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID instance
+./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID instance $instance_id
 
-#snapshot info
-./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID snapshot 1a16c40a-c61a-4412-8b3e-83127c9f3132
+# ==> snapshot info
+# list all snapshot
+./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID snapshot
+# format for bash line parsing with jq
 ./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID snapshot | jq -r '.[]|.id+" "+.name+" "+.status'
+./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID snapshot $snapshot_id
 
-# domain ip info read awk
-instance=$(./cloud.sh status | awk '/rm.open/ { print $1}')
-read ip hostname <<< $(./cloud.sh call list_instance \$PROJECT_ID $instance | awk '{ print $2,$3 }')
+# ==> domain ip info with read + awk
+# list all running instance (same as ./cloud.sh list)
+./cloud.sh status
+# extract first instance_id
+instance=$(./cloud.sh status | awk '{print $1; exit}')
+# read 2 first column
+read ip hostname <<< $(./cloud.sh list \$PROJECT_ID $instance | awk '{ print $2,$3 }')
 echo ip=$ip hostname=$hostname
+# if your instance is named with a domain name registerd on OVH you can the forward and reverse DNS too:
 ./cloud.sh call set_ip_domain $ip $hostname
 
-# list instance
-./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID instance
-# This credential is not valid
-./cloud.sh call ovh_cli --format json auth current-credential
-
-./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID instance \
-    | jq -r '.[]|.id+" "+(.ipAddresses[]|select(.type=="public")).ip+" "+.name'
-
-# with jq
+# same with jq and a temporary file in ramdrive
 mytmp=/dev/shm/cloud_status.tmp
 ./cloud.sh call get_instance_status \$PROJECT_ID $instance FULL > $mytmp
 ip=$(jq -r '(.ipAddresses[]|select(.type=="public")).ip' < $mytmp)
 hostname=$(jq -r '.name' < $mytmp)
 ./cloud.sh call set_ip_domain $ip $hostname
+
+# STOP
+
+# ==> list instance
+./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID instance
+# get current credential information
+./cloud.sh call ovh_cli --format json auth current-credential
+
+# display some running instance data (IPv6 and IPv4 are mangled)
+./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID instance | jq -r '.[]|.id+" "+(.ipAddresses[]|select(.type=="public")).ip+" "+.name'
 
 # project manipulation
 ./cloud.sh call find_image \$PROJECT_ID Deb
