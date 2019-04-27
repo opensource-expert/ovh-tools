@@ -1,14 +1,90 @@
 # cloud.sh truc en cours
 
+## create et check region ou force région
+
+lors du create, si la valeur REGION ne match pas celle de l'image:
+
+* forcer à celle de l'image
+* stopper et afficher un warning
 
 ## ajouter init
 
 Initialisation des credentials et de la config de l'outil (voire installation de ovh-cli ?)
+Génération du cloud.conf avec un template
 
 ## ajouter docopts
 
 
-## write_conf avec support de commentaires?
+## ajouter les tests fonctionnels avec bats-core
+
+Dans test/all.sh à convertir
+
+## ajouter le `create_saved_script`
+
+récupère les informations sur une VM qui tourne et génère un script de restart.
+
+Usage:
+
+```
+# dump
+./cloud.sh create_saved_script $instance_id saved/restore_ansible.sh
+
+# restore
+
+./cloud.sr run saved/restore_ansible.sh
+```
+
+récupère (sauve le json de l'instance dans le .sh généré?)
+
+* la flavor
+* le hostname
+* les clés ssh
+* les domaines à reset à la fin sur l'IP
+* fait un snapshot ?
+
+```bash
+# force hostname
+myhostname=vim7.opensource-expert.com
+
+# restoring as flavor:
+FLAVOR_NAME=eg-7
+
+# store some output for optimizing API no-requery (internal)
+mytmp=$TMP_DIR/saved_vim7_eg7.$$
+
+# get last image by comment
+#myimage=$(last_snapshot $PROJECT_ID vim7)
+# get first image
+myimage=$(order_snapshots $PROJECT_ID \
+  | grep "vim7" | tail -1 | awk '{print $1}')
+
+# reforce this at the end
+myinit_script=$SCRIPTDIR/init/init_root_login_OK.sh
+
+mysshkey=$(get_sshkeys $PROJECT_ID sylvain)
+instance=$(create_instance $PROJECT_ID $myimage $mysshkey \
+  $myhostname $myinit_script \
+  | jq -r '.id')
+if wait_for_instance $PROJECT_ID $instance 210 ; then
+  get_instance_status $PROJECT_ID $instance FULL > $mytmp
+  ip=$(get_ip_from_json < $mytmp)
+  hostname=$(jq -r '.name' < $mytmp)
+  set_ip_domain $ip $hostname
+fi
+rm $mytmp
+
+# post setup
+if [[ -n "$ip" ]]
+then
+  # empty my ssh/known_hosts
+  ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $myhostname
+  ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $ip
+  source $SCRIPTDIR/saved/assign_domain_to_ip.sh $ip
+  #cat init/cleanup_vim7.sh | ssh -y
+fi
+```
+
+## `write_conf` avec support de commentaires?
 
 comment on fait les mises à jour du commentaire au dessu de VAR1 ?
 

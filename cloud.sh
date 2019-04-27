@@ -52,19 +52,24 @@ else
 fi
 
 # help
-extract_usage() {
+function extract_usage() {
    sed -n -e '/^# Usage:/,/^$/ s/^# \?//p' < $0
+}
+function list_callable_functions() {
+  # doesn't match functions with 'function' prefix keyword
+  grep -E '^([a-z_]+\(\))' $ME | sed -e 's/() {//' -e 's/)$//' -e 's/^/   /'
 }
 if [[ "$1" == "help" || "$1" == "--help" ]]
 then
-  # list case entries and functions
   extract_usage
   echo
   echo "List of callable functions:"
-  grep -E '^([a-z_]+\(\))' $ME | sed -e 's/() {//' -e 's/)$//' -e 's/^/   /'
+  list_callable_functions
   exit 0
 fi
 
+
+######################################################## configuration
 SCRIPTDIR=$(dirname $ME)
 OVH_CLIDIR=$SCRIPTDIR/../ovh-cli
 
@@ -108,7 +113,7 @@ ovh_cli() {
   return $r
 }
 
-log() {
+function log() {
   if [[ -n $LOGFILE ]]
   then
     echo "$(date "+%Y-%m-%d_%H:%M:%S"): $*" >> $LOGFILE
@@ -116,9 +121,9 @@ log() {
 }
 
 
-# Usage: color_output "grep_pattern"
+# function Usage: color_output "grep_pattern"
 # dont filter output, only colorize tha grep_pattern
-color_output() {
+function color_output() {
   if [[ -n $1 ]]
   then
     # grep is a trick to colorize the current project in cloud.conf
@@ -143,24 +148,43 @@ show_projects() {
   return $r
 }
 
-# dump all: snapshot-id name in reverse order
+# list all: snapshot_id name in reverse order by creationDate
 order_snapshots() {
   local p=$1
-  # sort_by in on some advanced jq binary, it may fail
+  # sort_by in on some advanced jq binary, version jq-1.6, it may fail on debian version
   ovh_cli --format json cloud project $p snapshot \
     | jq -r '.|sort_by(.creationDate)|reverse|.[]|
       .id+" "+.name+" "+.region'
 }
 
+# draft snapshot ordering helper to be used in saved scripts
 last_snapshot() {
   # p as $1
+  # pattern as $2
   order_snapshots $1 | grep "$2" | head -1 | awk '{print $1}'
 }
 
+# function Usage:
+#   snapshot_list $project_id [-o]
+#   $order if present force list to be order by creationDate decreasing
 snapshot_list() {
   local p=$1
+  local order=$2
+  local order_filter='.[]|'
+
+  if [[ -n $order ]]
+  then
+    # sort_by is not supported by all version of jq so not by default
+    order_filter='.|sort_by(.creationDate)|reverse|.[]|'
+  fi
   ovh_cli --format json cloud project $p snapshot \
-    | jq -r '.[]|.id +" "+.name+" "+.status+" "+.region'
+    | jq -r "$order_filter
+      .id
+      +\" \"+.name
+      +\" \"+.status
+      +\" \"+.region
+      +\" \"+.creationDate
+      "
 }
 
 delete_snapshot() {
@@ -275,7 +299,7 @@ get_instance_status() {
 
 # DRY: format json output
 # this filter JSON ouput for bash with some fields
-# Usage: 
+# function Usage:
 #   json_input | show_json_instance many  => fister output for a list
 #   json_input | show_json_instance       => fister output for a single instance
 #
@@ -305,7 +329,7 @@ show_json_instance() {
 }
 
 # DRY func
-# Usage get_ip_from_json < $tmp_json_input
+# function Usage: get_ip_from_json < $tmp_json_input
 get_ip_from_json() {
   show_json_instance | awk '{print $2}'
 }
@@ -391,6 +415,7 @@ set_forward_dns() {
     ovh_cli --format json domain zone $domain record create \
       --target $ip --ttl $DNS_TTL --subDomain $subdomain --fieldType A
   else
+    # update existing recors
     ovh_cli --format json domain zone $domain record $record put \
       --target $ip \
       --ttl $DNS_TTL
@@ -451,7 +476,7 @@ set_project() {
   return 1
 }
 
-# Usage:
+# function Usage:
 #   write_conf conffile VAR=value VAR2=value2 DELETE=VAR3 ...
 write_conf() {
   local conffile="$1"
@@ -571,10 +596,11 @@ region_list() {
    ovh_cli --format json cloud project $PROJECT_ID region | jq -r '.[]'
 }
 
-wait_for_instance() {
+wait_for() {
   local p=$1
-  local instance=$2
-  local max=$3
+  local wait_for=$2
+  local object_id=$3
+  local max=$4
 
   if [[ -z "$max" ]] ; then
     echo "no max"
@@ -582,7 +608,7 @@ wait_for_instance() {
   fi
 
   local startt=$SECONDS
-  local tmp=$TMP_DIR/wait_$instance.$$
+  local tmp=$TMP_DIR/wait_$object_id.$$
   while true
   do
     if [[ $(( SECONDS - startt )) -gt $max ]] ; then
@@ -590,14 +616,30 @@ wait_for_instance() {
       break
     fi
 
-    # greped on JSON output because we are going to
-    # extract mainy informations IPv4, sshuser
-    if get_instance_status $p $instance FULL | tee $tmp \
-        | grep -q '"status": "ACTIVE"' ; then
-      echo OK
-      show_json_instance < $tmp
-      break
-    fi
+    case $wait_for in
+    instance)
+      # greped against JSON output because we are going to
+      # extract many informations IPv4, sshuser
+      if get_instance_status $p $object_id FULL | tee $tmp \
+          | grep -q '"status": "ACTIVE"' ; then
+        echo OK
+        show_json_instance < $tmp
+        break
+      fi
+      ;;
+    snapshot)
+      if get_snapshot_status $p $object_id FULL | tee $tmp \
+          | grep -q '"status": "ACTIVE"' ; then
+        echo OK
+        show_json_instance < $tmp
+        break
+      fi
+      ;;
+    *)
+      echo "don't know how to get status for '$wait_for'"
+      return 1
+      ;;
+    esac
 
     # wrong id ?
     if grep "Object not found" < $tmp ; then
@@ -645,6 +687,24 @@ wait_for_instance() {
   return 1
 }
 
+wait_for_instance() {
+  local p=$1
+  local instance_id=$2
+  local max=$3
+
+  wait_for "$p" instance "$instance_id" "$max"
+  return $?
+}
+
+wait_for_snapshot() {
+  local p=$1
+  local snapshot_id=$2
+  local max=$3
+
+  wait_for "$p" snapshot "$snapshot_id" "$max"
+  return $?
+}
+
 # cannot be called when sourced
 fail() {
   echo "$*"
@@ -653,7 +713,7 @@ fail() {
 
 ###################################### main
 
-# prefix 'function' not to be greped with --help
+# prefix with 'function' keyword to not to be greped with --help. See extract_usage
 function main() {
   action=$1
   proj=$2
@@ -667,7 +727,8 @@ function main() {
 
   case $action in
     snap_list|get_snap|snapshot_list)
-      snapshot_list $proj
+      ordering=$3
+      snapshot_list $proj $ordering
     ;;
     create)
       #image_id can also be a snapshot_id
@@ -788,11 +849,13 @@ function main() {
       ;;
     run)
       src="$3"
+      shift 3
       # search code loop
       for f in $src "saved/$3"
       do
         if [[ -e "$src" ]] ; then
-          source $src "${@:4:$#}"
+          # argument from $4 ...
+          source $src "$@"
           break
         fi
       done
@@ -805,6 +868,8 @@ function main() {
   esac
 }
 
+
+################################################################## exec code
 if [[ $sourced -eq 0 ]]
 then
   loadconf "$CONFFILE"
