@@ -187,6 +187,20 @@ snapshot_list() {
       "
 }
 
+get_snapshot_status() {
+  local p=$1
+  local snapshot_id=$2
+
+  if [[ -z $snapshot_id ]]
+  then
+    echo "no snapshot_id"
+    return 1
+  fi
+
+  ovh_cli --format json cloud project $p snapshot $snapshot_id
+  return 0
+}
+
 delete_snapshot() {
   local p=$1
   local snap_id=$2
@@ -782,7 +796,7 @@ function main() {
       fi
       create_snapshot $proj $instance "$host"
       ;;
-    del_snap)
+    del_snap|snap_delete)
       snap_id=$3
       delete_snapshot $proj $snap_id
       ;;
