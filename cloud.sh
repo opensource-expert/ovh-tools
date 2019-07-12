@@ -247,7 +247,10 @@ create_instance() {
 
   if [[ ! -z "$init_script" && -e "$init_script" ]]
   then
-    # with an init_script, added in json so it is parsable
+    # with an init_script
+    local tmp_init=$(preprocess_init "$init_script")
+
+    # we merge the init_script in the outputed json so it becomes parsable
     ovh_cli --format json cloud project $p instance create \
       --flavorId $flavor_id \
       --imageId $image_id \
@@ -255,9 +258,12 @@ create_instance() {
       --name "$hostname" \
       --region $REGION \
       --sshKeyId $sshkey \
-      --userData "$(cat $init_script)" \
-        | jq ". + {\"init_script\" : \"$init_script\"}"
+      --userData "$(cat $tmp_init)" \
+        | jq ". + {\"init_script\" : \"$tmp_init\"}"
+
+    rm $tmp_init
   else
+    # without init_script
     ovh_cli --format json cloud project $p instance create \
       --flavorId $flavor_id \
       --imageId $image_id \
@@ -266,6 +272,28 @@ create_instance() {
       --region $REGION \
       --sshKeyId $sshkey
   fi
+}
+
+# load a init_script and merge some content
+preprocess_init() {
+  local init_script="$1"
+
+  # extract APPEND_SCRIPTS value
+  local append_scripts=$(sed -n -e '/^APPEND_SCRIPTS="/,/^"$/ p' $init_script)
+
+  # copy to shared memory
+  local tmp_init="/dev/shm/tmp_init.$$"
+  cp $init_script $tmp_init
+
+  # compose with included files
+  local s
+  for s in $(sed -e '1 d' -e '$ d' <<< "$append_scripts")
+  do
+    echo "# included: $s" >> $tmp_init
+    cat $s >> $tmp_init
+  done
+
+  echo $tmp_init
 }
 
 instance_list() {
