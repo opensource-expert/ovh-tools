@@ -68,7 +68,6 @@ then
   exit 0
 fi
 
-
 ######################################################## configuration
 SCRIPTDIR=$(dirname $ME)
 OVH_CLIDIR=$SCRIPTDIR/../ovh-cli
@@ -94,7 +93,7 @@ TMP_DIR=/dev/shm
 LOGFILE=./my.log
 
 # DEFAULTS
-REGION=GRA5
+REGION=WAW1
 DNS_TTL=60
 DEFAULT_FLAVOR=s1-8
 
@@ -208,10 +207,65 @@ delete_snapshot() {
     | grep -E '(^|status.*)'
 }
 
+snapshot_make_increment() {
+  local p=$1
+  local instance_id=$2
+
+  # read instance information
+  local instance_json=$(ovh_cli --format json cloud project $p instance $instance_id)
+
+  # read json data
+  local image_visibility=$(jq -r .image.visibility <<< "$instance_json")
+  local image_name=$(jq -r .image.name <<< "$instance_json")
+
+  # compute new name for the snapshot
+  local new_snap_name=""
+  local old_snap_count=0
+  if [[ $image_visibility == 'private' ]] ; then
+    new_snap_name=${image_name%-*}
+    # extract counter if any
+    old_snap_count=${image_name#$new_snap_name-}
+    if [[ ! $old_snap_count =~ ^[0-9]+$ ]] ; then
+      # force number
+      old_snap_count=0
+    fi
+  else
+    new_snap_name=$(jq -r .name <<< "$instance_json")
+  fi
+
+  echo "old_snap_count $old_snap_count"
+  new_snap_name="${new_snap_name}-$((old_snap_count + 1))"
+  echo "image_name $image_name new_snap_name $new_snap_name old_snap_count $old_snap_count"
+
+  echo "snapshot_create $p $instance_id \"$new_snap_name\""
+  snapshot_create $p $instance_id "$new_snap_name"
+  local new_snapshot_json=$(ovh_cli --format json cloud project $p snapshot |
+      jq -r ".[]|select(.name == \"$new_snap_name\")")
+  jq . <<< "$new_snapshot_json"
+  local wait_timeout=120
+  if wait_for_snapshot "$p" "$(jq -r .id <<< "$new_snapshot_json")" $wait_timeout; then
+    echo "OK snapshoted"
+    return 0
+  else
+    echo "error: timeout $wait_timeout or error, snapshot is unavailable"
+    return 1
+  fi
+}
+
+instance_snapshot_and_delete() {
+  local p=$1
+  local instance_id=$2
+  if snapshot_make_increment $p $instance_id; then
+    echo "deleting instance_id $instance_id"
+    delete_instance "$p" "$instance_id"
+  fi
+}
+
 get_flavor() {
   local p=$1
   local flavor_name=$2
-  local region=$3
+  # default value $REGION
+  local region=${3:-$REGION}
 
   if [[ -z "$flavor_name" ]]
   then
@@ -219,10 +273,6 @@ get_flavor() {
       | jq -r '.[]|select(.osType != "windows")
           .id+" "+.name+" "+(.vcpus|tostring)+" CPU "+(.ram|tostring)+" Mo "+.region'
   else
-    if [[ -z $region ]]
-    then
-      region=$REGION
-    fi
     # must return a single flavor for a region
     ovh_cli --format json cloud project $p flavor \
       | jq -r ".[]|select(.name == \"$flavor_name\" and .region == \"$region\").id"
@@ -317,7 +367,7 @@ get_instance_status() {
   local i=$2
   # $3 == FULL : full json output
 
-  if [[ "$3" == "FULL" ]]
+  if [[ $# -eq 3 && "$3" == "FULL" ]]
   then
     if [[ "$i" == "ALL" ]]
     then
@@ -348,7 +398,6 @@ get_instance_status() {
 # field Order is important
 #  id ip  name status region flavor
 show_json_instance() {
-
   # filter IPv4
   # get flavor through planCode first part as present in both JSON
   local jq_filter='.id+" "+
@@ -362,7 +411,7 @@ show_json_instance() {
         +" "+(.planCode|split(".")[0])
         '
 
-  if [[ "$1" == "many" ]]
+  if [[ $# -eq 1 && "$1" == "many" ]]
   then
     jq -r ".[]|$jq_filter"
   else
@@ -400,9 +449,12 @@ get_domain_record_id() {
   local fqdn=$1
   local domain=$(get_domain $fqdn)
   local subdomain=${fqdn/.$domain/}
+  # search for fieldType A as default
+  local fieldType=${2:-A}
 
   ovh_cli --format json domain zone $domain record \
     --subDomain $subdomain \
+    --fieldType $fieldType \
     | jq -r '.[0]'
 }
 
@@ -488,7 +540,7 @@ delete_instance() {
   ovh_cli cloud project $p instance $i delete
 }
 
-create_snapshot() {
+snapshot_create() {
   local p=$1
   local i=$2
   local snap_name="$3"
@@ -651,6 +703,32 @@ wait_for() {
 
   local startt=$SECONDS
   local tmp=$TMP_DIR/wait_$object_id.$$
+  local wait_for_ssh=false
+  local cmd=""
+
+  case $wait_for in
+  instance)
+    # greped against JSON output because we are going to
+    # extract many informations IPv4, sshuser
+    cmd="get_instance_status $p $object_id FULL | tee $tmp \
+        | grep -q '\"status\": \"ACTIVE\"'"
+    #'"
+    cmd_success="show_json_instance < $tmp"
+    wait_for_ssh=true
+    ;;
+  snapshot)
+    cmd="get_snapshot_status $p $object_id FULL | tee $tmp \
+        | grep -q -i '\"status\": \"active\"'"
+    #'"
+    cmd_success="jq . < $tmp"
+    wait_for_ssh=false
+    ;;
+  *)
+    echo "don't know how to get status for '$wait_for'"
+    return 1
+    ;;
+  esac
+
   while true
   do
     if [[ $(( SECONDS - startt )) -gt $max ]] ; then
@@ -658,34 +736,15 @@ wait_for() {
       break
     fi
 
-    case $wait_for in
-    instance)
-      # greped against JSON output because we are going to
-      # extract many informations IPv4, sshuser
-      if get_instance_status $p $object_id FULL | tee $tmp \
-          | grep -q '"status": "ACTIVE"' ; then
-        echo OK
-        show_json_instance < $tmp
-        break
-      fi
-      ;;
-    snapshot)
-      if get_snapshot_status $p $object_id FULL | tee $tmp \
-          | grep -q '"status": "ACTIVE"' ; then
-        echo OK
-        show_json_instance < $tmp
-        break
-      fi
-      ;;
-    *)
-      echo "don't know how to get status for '$wait_for'"
-      return 1
-      ;;
-    esac
+    if eval "$cmd" ; then
+      echo OK
+      eval "$cmd_success"
+      break
+    fi
 
     # wrong id ?
     if grep "Object not found" < $tmp ; then
-      echo "wrong id: '$instance'"
+      echo "wrong id: '$object_id'"
       return 1
     fi
 
@@ -698,35 +757,42 @@ wait_for() {
     return 1
   fi
 
-  # read IPv4
-  local ip=$(get_ip_from_json < $tmp)
-  local sshuser=$(jq -r '.image.user' < $tmp)
-  rm -f $tmp
+  if $wait_for_ssh ; then
+    # read IPv4
+    local ip=$(get_ip_from_json < $tmp)
+    local sshuser=$(jq -r '.image.user' < $tmp)
+    rm -f $tmp
 
-  if [[ -z "$ip" || -z "$sshuser" ]] ; then
-    echo "internal error, no ip found or no sshuser"
+    if [[ -z "$ip" || -z "$sshuser" ]] ; then
+      echo "internal error, no ip found or no sshuser"
+      return 1
+    fi
+
+    # also wait until we can ssh to the new instance
+    while true
+    do
+      if [[ $(( SECONDS - startt )) -gt $max ]] ; then
+        echo "ssh timeout reached: $max"
+        break
+      fi
+
+      if ssh -q -o StrictHostKeyChecking=no $sshuser@$ip \
+        "echo \"logged IN \$USER@$ip \$(hostname -f)\" $((SECONDS - startt ))s" \
+            2> /dev/null; then
+        return 0
+      fi
+
+      echo -n '.'
+      sleep $SLEEP_DELAY
+    done
+
+    # no ssh success so we have failed
     return 1
+  else
+    # success
+    rm -f $tmp
+    return 0
   fi
-
-  # also wait until we can ssh to it…
-  while true
-  do
-    if [[ $(( SECONDS - startt )) -gt $max ]] ; then
-      echo "ssh timeout reached: $max"
-      break
-    fi
-
-    if ssh -q -o StrictHostKeyChecking=no $sshuser@$ip \
-      "echo \"logged IN \$USER@$ip \$(hostname -f)\" $((SECONDS - startt ))s" \
-          2> /dev/null; then
-      return 0
-    fi
-
-    echo -n '.'
-    sleep $SLEEP_DELAY
-  done
-
-  return 1
 }
 
 wait_for_instance() {
@@ -822,11 +888,22 @@ function main() {
       then
         host=$(get_instance_status $proj $instance | awk '{print $3}')
       fi
-      create_snapshot $proj $instance "$host"
+      snapshot_create $proj $instance "$host"
       ;;
     del_snap|snap_delete)
       snap_id=$3
-      delete_snapshot $proj $snap_id
+      if [[ $# -gt 3 ]]
+      then
+        # array slice on $@ 3 to end
+        multi_snapshot=${@:3:$#}
+        for s in $multi_snapshot
+        do
+          delete_snapshot $proj $s
+        done
+      else
+        # single snapshot
+        delete_snapshot $proj $snap_id
+      fi
       ;;
     delete)
       instance=$3
@@ -839,6 +916,8 @@ function main() {
           delete_instance $proj $i
         done
       else
+        # fetch all instance_id and delete
+        # WARNING: no confirm requiered
         if [[ "$instance" == ALL ]]
         then
           while read i ip hostname
@@ -847,6 +926,7 @@ function main() {
             delete_instance $proj $i
           done <<< "$(instance_list $proj)"
         else
+          # single instance delete
           delete_instance $proj $instance
         fi
       fi

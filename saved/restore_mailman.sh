@@ -21,6 +21,8 @@ else
 fi
 
 if $create ; then
+  set -x
+  # fetch the most recent image_id given the pattern
   myimage=$(last_snapshot $PROJECT_ID "mailman3-stretch")
   mysshkey=$(get_sshkeys $PROJECT_ID sylvain2016)
   mytmp=$TMP_DIR/saved_debian9_mailman.$$
@@ -34,6 +36,9 @@ if $create ; then
   fi
   rm $mytmp
 
+  echo "instance_id $instance"
+
+  set +x
   # post setup if success
   if [[ -n "$ip" ]]
   then

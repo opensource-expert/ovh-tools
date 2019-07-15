@@ -101,7 +101,7 @@ echo $instance_id
 # instance
 instance_id=some_id_in_list_instance
 ./cloud.sh call delete_instance $instance_id
-./cloud.sh call create_snapshot \$PROJECT_ID $instance_id $snapshot_id
+./cloud.sh call snapshot_create \$PROJECT_ID $instance_id $snapshot_name
 
 # internal config
 ./cloud.sh call id_is_project A_PROJECT_ID

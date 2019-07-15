@@ -7,7 +7,7 @@ myhostname=$1
 
 if [[ -z $myhostname ]]
 then
-  myhostname="mailman.opensource-expert.com"
+  myhostname="mailman-host.opensource-expert.com"
 fi
 
 FLAVOR_NAME=s1-2
@@ -42,3 +42,16 @@ fi
 myinit_script=$SCRIPTDIR/init/gerer_post_install.sh
 mytmp_init=$(preprocess_init "$myinit_script")
 cat $mytmp_init | ssh -o StrictHostKeyChecking=no debian@$ip "sudo bash -"
+
+# update DNS MX recorde (must exists first)
+domain=opensource-expert.com
+mx_record="mailman.$domain"
+record=$(get_domain_record_id $mx_record  MX)
+# add MX record
+mx_target="10 $myhostname"
+echo "updating MX: $mx_record => $mx_target"
+ovh_cli --format json domain zone $domain record $record put --target "$mx_target" --ttl $DNS_TTL
+
+echo
+echo "READY! ssh debian@$ip"
+echo
