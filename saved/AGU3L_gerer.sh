@@ -1,13 +1,22 @@
 #!/bin/bash
 # cloud.sh saved session
 
-#set -x
-# hostname can be read as first argument
-myhostname=$1
+set -euo pipefail
+ovh_test_login || fail "OVH credential login error"
 
-if [[ -z $myhostname ]]
+#set -x
+
+if [[ $# -eq 1 ]]
 then
-  myhostname="mailman-host.opensource-expert.com"
+  # hostname can be read as first argument
+  myhostname=$1
+  local_host=${myhostname%%.*}
+  domain_name=${myhostname#$local_host.}
+  machine_name=$local_host-host.$domain_name
+else
+  # default
+  machine_name="mailman-host.opensource-expert.com"
+  myhostname="mailman.opensource-expert.com"
 fi
 
 FLAVOR_NAME=s1-2
@@ -43,14 +52,7 @@ myinit_script=$SCRIPTDIR/init/gerer_post_install.sh
 mytmp_init=$(preprocess_init "$myinit_script")
 cat $mytmp_init | ssh -o StrictHostKeyChecking=no debian@$ip "sudo bash -"
 
-# update DNS MX recorde (must exists first)
-domain=opensource-expert.com
-mx_record="mailman.$domain"
-record=$(get_domain_record_id $mx_record  MX)
-# add MX record
-mx_target="10 $myhostname"
-echo "updating MX: $mx_record => $mx_target"
-ovh_cli --format json domain zone $domain record $record put --target "$mx_target" --ttl $DNS_TTL
+saved/mailman_set_dns_records.sh "$machine_name" "$myhostname" "$ip"
 
 echo
 echo "READY! ssh debian@$ip"

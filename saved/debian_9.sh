@@ -1,17 +1,17 @@
 #!/bin/bash
 # cloud.sh saved session
 
+set -euo pipefail
 #set -x
-myhostname=$1
 
-if [[ -z $myhostname ]]
+if [[ $# -eq 1 ]]
 then
+  myhostname=$1
+else
   myhostname="tmp-$$.opensource-expert.com"
 fi
 
-FLAVOR_NAME=s1-8
-
-mytmp=$TMP_DIR/saved_debian9_s1-8.$$
+mytmp=$TMP_DIR/saved_debian9.$$
 
 myimage=$(find_image $PROJECT_ID 'Debian.9$' | awk '{print $1}')
 mysshkey=$(get_sshkeys $PROJECT_ID sylvain2016)

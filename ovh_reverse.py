@@ -15,7 +15,7 @@ ip = sys.argv[1]
 fqdn = sys.argv[2]
 
 # Instanciate an OVH Client. use your ovh.conf
-client = ovh.Client() 
+client = ovh.Client()
 
 try:
     result = client.post('/ip/%s/reverse/' % ip,

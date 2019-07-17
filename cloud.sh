@@ -41,7 +41,6 @@
 #
 # See: test/all.sh for many examples
 
-
 ########################################################  init
 [[ $0 != "$BASH_SOURCE" ]] && sourced=1 || sourced=0
 if [[ $sourced -eq 0  ]]
@@ -110,6 +109,32 @@ ovh_cli() {
   cd - > /dev/null
   log "$@ ==> $r"
   return $r
+}
+
+
+ovh_test_credential() {
+  local credential="$1"
+  local regexp="^This credential (is not valid|does not exist)"
+  if [[ $credential =~ $regexp ]]
+  then
+    return 1
+  else
+    return 0
+  fi
+}
+
+ovh_test_login() {
+  local r=$(ovh_cli --format json auth current-credential)
+
+  if ovh_test_credential "$r" ; then
+    if [[ "$(jq -r '.status' <<< "$r")" == 'expired' ]] ; then
+      return 1
+    fi
+  else
+    return 1
+  fi
+
+  return 0
 }
 
 function log() {
@@ -446,7 +471,8 @@ get_sshkeys() {
 }
 
 get_domain_record_id() {
-  local fqdn=$1
+  # remove trailing dot if any
+  local fqdn=${1%.}
   local domain=$(get_domain $fqdn)
   local subdomain=${fqdn/.$domain/}
   # search for fieldType A as default
@@ -477,7 +503,7 @@ set_ip_domain() {
   # python wrapper
   $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}.
 
-  echo "  if needed: re-set revrses with:"
+  echo "  if needed: re-set reverse DNS with:"
   echo "  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}. "
 }
 
@@ -549,12 +575,16 @@ snapshot_create() {
 }
 
 id_is_project() {
-  # return a array of project_id, -1 if not found
-  ovh_cli --format json cloud project | jq -r '.[]' | grep -q "^$1\$" && return 0
-  # fail
-  return 1
+  # return an array of project_id, -1 if not found
+  local json=$(ovh_cli --format json cloud project)
+  if ovh_test_credential "$json" ; then
+    # if credential are wrong this is not a valid JSON
+    jq -r '.[]' <<< "$json" | grep -q "^$1\$" && return 0
+  else
+    # fail
+    return 1
+  fi
 }
-
 
 set_project() {
   local p=$1
@@ -970,9 +1000,10 @@ function main() {
       call_func $call_function "$@"
       ;;
     run)
+      # run the given scripts as an internal commands
       src="$3"
       shift 3
-      # search code loop
+      # search code loop lookup
       for f in $src "saved/$3"
       do
         if [[ -e "$src" ]] ; then
