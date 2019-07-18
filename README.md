@@ -1,36 +1,39 @@
 # ovh-tools
-Sysadmin tools which works with [OVH API](https://eu.api.ovh.com/console/),
-written in bash and python.
 
+Ce dépôt contient un code pour Sysadmin qui utilise l'[API OVH](https://eu.api.ovh.com/console/ pour manipuler des instances sur le public-cloud. Le script est écrit en bash plus un peut de python pour les appels d'API.
 
-## Status : working draft
+Comme c'est destiné à fonctionné sur OVH, j'ai réécrit cette documentation en Français.
 
-There's multiple scripts. The main code is `cloud.sh`.
+English speaker: ask for translation.
 
-* `cloud.sh` - manipulate OVH public cloud instances and snapshot
-* `mk_cred.py` - intiate credential for python OVH API
-* `ovh_reverse.py` - set a reverse DNS entry on OVH
-* `ovh_snapshot.py` - take a snapshot of an instance
+## Statut : PoC prototye qui fonctionne
 
-Documentation is still lacking a lot of details and programming skill
-is strongly requiered.
+Il y a plusieurs scripts. Le code principale est `cloud.sh`.
 
-## Install
+* `cloud.sh` - manipule le public cloud d'OVH instances, snapshot et domaines
+* `mk_cred.py` -  initialize l'authentification pour l'API OVH avec python
+* `ovh_reverse.py` - actice le reverse DNS pour une IP d'instance chez OVH
 
-pickup what is needed for your environment: (Tested on Debian 8 Jessie and
-ubuntu 16.10)
+La documentation manque encore de nombreux détails, et des compétences en programmation bash, JSON, python est fortement recommandées pour utiliser ces outils.
 
-I assume `~/` as base dir.
+## Installation
 
-~~~
+Nous montrons une installation sous une VM public-cloud. (testé avec debian 9 Stretch et Ubuntu 18.04)
+
+On suppose que l'installation se fait à la racine d'une VM en roott, on travaile dans `~/`.
+
+```
+apt update
 apt install -y git
 git clone https://github.com/opensource-expert/ovh-tools.git
+# TODO: install jq 1.6
 apt install -y jq python-pip python-dev
 cd ~/ovh-tools
 pip install -r requirements.txt
-~~~
+```
 
 ~~~
+cd ~
 git clone https://github.com/yadutaf/ovh-cli.git
 cd ovh-cli/
 pip install wheel
@@ -40,7 +43,7 @@ pip install -r requirements.txt
 ./ovh-eu
 ~~~
 
-### supposed folder structure
+### La structure des dossiers attendue
 ~~~
 .
 ├── ovh-cli
