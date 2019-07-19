@@ -1,5 +1,47 @@
 # cloud.sh truc en cours
 
+## fix le script could-init qui ne fonctionne plus
+
+## bloquer une suppression de VM ou snapshot
+
+via cloud.conf ou un autre fichier de config ?
+
+protected.conf
+
+```
+SNAP_PROTECTED=(
+SNAP_ID
+SNAP_ID2
+...
+)
+
+INSTANCE_PROTECTED=(
+INSTANCE_ID
+INSTANCE_ID2
+...
+)
+
+# ou en Assoc
+declare -A A_INSTANCE_PROTECTED
+A_INSTANCE_PROTECTED=(
+[molo]="mercredi 17 juillet 2019, 09:39:58 (UTC+0200)"
+[molo2]="mercredi 17 juillet 2019, 09:41:59 (UTC+0200)"
+)
+
+```
+
+exemple d'API
+
+```
+./cloud.sh snap_protect SNAP_ID
+./cloud.sh instance_protect INSTANCE_ID
+
+# list
+./cloud.sh protected
+```
+
+dans les commandes d'API pas dans la commande main seulement
+
 ## create et check region ou force région
 
 lors du create, si la valeur REGION ne match pas celle de l'image:
@@ -89,7 +131,7 @@ fi
 comment on fait les mises à jour du commentaire au dessu de VAR1 ?
 
 ```
-write_conf -c "mon commentaire sur VAR1" VAR1=valeur
+write_conf -c "VAR1: mon commentaire blabla" VAR1=valeur
 ```
 
 prototype

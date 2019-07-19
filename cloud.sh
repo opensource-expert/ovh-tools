@@ -15,7 +15,7 @@
 #  ./cloud.sh [show_projects]
 #  ./cloud.sh help
 #  ./cloud.sh snap_list|get_snap|snapshot_list
-#  ./cloud.sh create IMAGE_ID HOSTNAME
+#  ./cloud.sh create IMAGE_ID HOSTNAME SSHKEY_ID
 #  ./cloud.sh wait INSTANCE_ID
 #  ./cloud.sh list_ssh|get_ssh
 #  ./cloud.sh instance_list|list
@@ -146,7 +146,7 @@ function log() {
 
 
 # function Usage: color_output "grep_pattern"
-# dont filter output, only colorize tha grep_pattern
+# dont filter output, only colorize the grep_pattern
 function color_output() {
   if [[ -n $1 ]]
   then
@@ -871,12 +871,18 @@ function main() {
     create)
       #image_id can also be a snapshot_id
       image_id=$3
-      sshkey=$(get_sshkeys $proj sylvain)
       hostname=$4
-      init_script=$5
+      sshkey_id=$5
+      init_script=$6
+
+      echo "image_id $image_id"
+      echo "hostname $hostname"
+      echo "sshkey_id $sshkey_id"
+      echo "init_script $init_script"
 
       tmp=$TMP_DIR/create_$hostname.$$
-      create_instance $proj $image_id $sshkey $hostname $init_script | tee $tmp
+      echo "create_instance '$proj' '$image_id' '$sshkey_id' '$hostname' '$init_script'"
+      create_instance $proj $image_id $sshkey_id $hostname $init_script | tee $tmp
       instance=$(jq -r '.id' < $tmp)
       echo "instance $instance"
       echo "# to wait instance: $0 wait $proj $instance"
