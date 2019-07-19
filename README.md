@@ -247,7 +247,7 @@ manager web d'OVH dans votre projet. Les clés sont par projet.
 
 ### Création d'une instance
 
-Il nous faut d'abord les arguments : `image_id` `sshkey_username`
+Il nous faut d'abord les arguments : `image_id` `sshkey_id`
 
 On prend la première qui est une image minimale Debian 9 (Stretch) qui vient
 de passer à `old stable` début juillet 2019.
@@ -267,7 +267,7 @@ La clé ssh. (Voir ci-dessus pour la liste)
 
 ```
 # my own key on a projet, use you own key!
-sshkey_username=63336c73646d4670626a49774d54593d
+sshkey_id=63336c73646d4670626a49774d54593d
 ```
 
 Le nom que l'on va donner à la machine. (Note: J'utilise des noms de domaine
@@ -280,7 +280,7 @@ hostname=ovh-tools.opensource-expert.com
 On a tout, on crée l'instance:
 
 ```
-./cloud.sh create $proj $image_id $hostname $sshkey_username
+./cloud.sh create $proj $image_id $hostname $sshkey_id
 ```
 
 ### To be continued...
