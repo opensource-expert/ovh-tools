@@ -3,8 +3,9 @@
 Ce dépôt contient un code pour Sysadmin qui utilise l'[API OVH](https://eu.api.ovh.com/console/) pour manipuler des instances sur le public-cloud. Le script est écrit en bash plus un peu de python pour les appels d'API.
 
 Comme c'est destiné à fonctionner sur OVH, j'ai réécrit cette documentation en Français, un peu de chauvinisme quoi !
+Le code et les commentaires eux resteront en anglais.
 
-English speaker: ask for translation.
+English speaker: ask for translation by creating an issue.
 
 ## Statut : PoC prototye qui fonctionne
 
