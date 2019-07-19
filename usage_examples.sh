@@ -25,7 +25,7 @@
 ./cloud.sh call ovh_cli --format json cloud project \$PROJECT_ID snapshot | jq -r '.[]|.id+" "+.name+" "+.status'
 
 # domain ip info read awk
-instance=$(./cloud.sh status | awk '/rm.open/ { print $1}')
+instance=$(./cloud.sh status | awk '/pattern_match_your_instance/ { print $1}')
 read ip hostname <<< $(./cloud.sh call list_instance \$PROJECT_ID $instance | awk '{ print $2,$3 }')
 echo ip=$ip hostname=$hostname
 ./cloud.sh call set_ip_domain $ip $hostname
