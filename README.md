@@ -59,15 +59,15 @@ pip install -r requirements.txt
     └── test
 ~~~
 
-
 Pour tous les exemples on travaille toujours dans le dossier `~/ovh-tools`.
 
 ## Scritps générateur de config pour l'authentification API (experimental)
 
 Pour l'API OVH les paramètres d'authentification sont stoqués dans le `ovh.conf`
-qui est dans le dossier local.
+qui est dans le dossier local. C'est un fichier `ini` décrit
+[ici](https://github.com/ovh/python-ovh#2-configure-your-application).
 
-L'API python reconnait ce fichier automatiquement.
+L'API OVH python reconnait ce fichier automatiquement.
 
 On peut construire automatiquement le fichier de credential avec la commande suivante.
 
@@ -80,8 +80,8 @@ cd ~/ovh-tools
 ./mk_cred.py update
 ~~~
 
-Le script initialise l'authentification avec l'API d'OVH et vous affiche une URL que vous devez copier dans un navigateur pour
-vous authentifier.
+Le script initialise l'authentification avec l'API d'OVH et vous affiche une
+URL que vous devez copier dans un navigateur pour vous authentifier.
 
 S'il s'agit d'une première authentification `./mk_cred.py new` : vous devevez
 d'abord saisir une application, le nom et la description de l'application sont

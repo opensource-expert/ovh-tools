@@ -708,12 +708,45 @@ call_func() {
   return $r
 }
 
+# grep for an image
+# use awk to get the image_id
+# Example:  find_image $PROJECT_ID | awk '/Debian 8$/ {print $1}'
 find_image() {
   local p=$1
-  local pattern="$2"
-  ovh_cli --format json cloud project $p image \
-    --osType linux --region $REGION \
-    | jq -r ".[]|.id+\" \"+.name" | grep "$pattern"
+  if [[ $# -ge 2 ]] ; then
+    local pattern="$2"
+    list_images $p linux text | grep "$pattern"
+  else
+    list_images $p linux text
+  fi
+}
+
+# list available images (this is not the same as snapshot)
+list_images() {
+  local p=$1
+  local limit_osType=""
+  local output_type=json
+
+  if [[ $# -ge 2 ]] ; then
+    limit_osType="--osType $2"
+  fi
+
+  if [[ $# -eq 3 ]] ; then
+    output_type=$3
+  fi
+
+  case $output_type in
+    json)
+      ovh_cli --format json cloud project $p image \
+        $limit_osType --region $REGION
+      ;;
+    *)
+      # format ID name
+      ovh_cli --format json cloud project $p image \
+        $limit_osType --region $REGION \
+        | jq -r ".[]|.id+\" \"+.name"
+      ;;
+  esac
 }
 
 region_list() {
