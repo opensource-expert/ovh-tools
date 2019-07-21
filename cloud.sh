@@ -1,24 +1,26 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# vim: set et sts=2 ts=2 sw=2:
 #
 # OVH public cloud API wrapper
 #
 # require https://github.com/yadutaf/ovh-cli + pip requirement + auth
 # require jq (c++ json parser for bash)
-# auth with:
-# OVH Europe: https://eu.api.ovh.com/createApp/
-# and create a consumer_key with ../ovh-cli/create-consumer-key.py
-# store all OVH api credential in ovh.conf
+# See: install.sh
 #
-# all call can be prefixed with a PROJECT_ID: ./cloud.sh ACTION [PROJECT_ID] param ...
+# Credential authenticatoin with:
+# OVH Europe: https://eu.api.ovh.com/createApp/
+# store all your OVH api credential into ovh.conf
+# See: mk_cred.py
 #
 # Usage:
 #  ./cloud.sh [show_projects]
 #  ./cloud.sh help
-#  ./cloud.sh snap_list|get_snap|snapshot_list
+#  ./cloud.sh snap_list|get_snap|snapshot_list [-o]
+#  ./cloud.sh image_list [OS_TYPE] [OUTPUT_FORMAT]
 #  ./cloud.sh create IMAGE_ID HOSTNAME SSHKEY_ID
+#  ./cloud.sh instance_list|list
 #  ./cloud.sh wait INSTANCE_ID
 #  ./cloud.sh list_ssh|get_ssh
-#  ./cloud.sh instance_list|list
 #  ./cloud.sh rename INSTANCE_ID NEW_NAME
 #  ./cloud.sh status [INSTANCE_ID]
 #  ./cloud.sh full_status|status_full [INSTANCE_ID]
@@ -32,10 +34,31 @@
 #  ./cloud.sh call FUNCTION_NAME [AGRS...]
 #  ./cloud.sh run SAVED_SCRIPT
 #
+# All call can be prefixed with a PROJECT_ID: ./cloud.sh ACTION [PROJECT_ID] param ...
 #
 # Actions:
-#   show_projects  list projects for the current credential
-#   help           list action and functions
+#   show_projects     list projects for the current credential
+#   help              list action and functions
+#   snap_list         list all snapshot availables in the current project
+#   create            create an instance with the given paremters
+#   wait              polling wait for an instance or a snapshot to complete
+#   list_ssh          list ssh keys for the current project
+#   list              list running instances in the current project
+#   rename            rename an instance
+#   status            same as list, give the status of an instance
+#   full_status|status_full [INSTANCE_ID]
+#   make_snap INSTANCE_ID [HOSTNAME]
+#   del_snap SNAPSHOT_ID
+#   delete INSTANCE_ID...
+#   set_all_instance_dns
+#   set_project PROJECT_ID
+#   set_flavor FLAVOR_NAME
+#   list_flavor|flavor_list
+#   call FUNCTION_NAME [AGRS...]
+#   run SAVED_SCRIPT
+#
+# Arguments:
+#   INSTANCE_ID      An openstack instance_id (returned by list)
 
 # The line above, must be kept empty for extract_usage()
 #
@@ -51,13 +74,16 @@ else
 fi
 
 # help
-function extract_usage() {
+function extract_usage()
+{
    sed -n -e '/^# Usage:/,/^$/ s/^# \?//p' < $0
 }
-function list_callable_functions() {
+function list_callable_functions()
+{
   # doesn't match functions with 'function' prefix keyword
-  grep -E '^([a-z_]+\(\))' $ME | sed -e 's/() {//' -e 's/)$//' -e 's/^/   /'
+  grep -E '^([a-z_]+\(\))' $ME | sed -e 's/()$//' -e 's/)$//' -e 's/^/   /'
 }
+
 if [[ "$1" == "help" || "$1" == "--help" ]]
 then
   extract_usage
@@ -94,7 +120,7 @@ LOGFILE=./my.log
 # DEFAULTS
 REGION=WAW1
 DNS_TTL=60
-DEFAULT_FLAVOR=s1-8
+DEFAULT_FLAVOR=s1-2
 
 ###################################### functions
 
@@ -102,7 +128,8 @@ DEFAULT_FLAVOR=s1-8
 # ovh-cli seems to require json def of all api in its own folder,
 # we need to change??
 # here we find ovh-cli in fixed nearby location
-ovh_cli() {
+ovh_cli()
+{
   cd $OVH_CLIDIR
   ./ovh-eu "$@"
   local r=$?
@@ -112,7 +139,8 @@ ovh_cli() {
 }
 
 
-ovh_test_credential() {
+ovh_test_credential()
+{
   local credential="$1"
   local regexp="^This credential (is not valid|does not exist)"
   if [[ $credential =~ $regexp ]]
@@ -123,7 +151,8 @@ ovh_test_credential() {
   fi
 }
 
-ovh_test_login() {
+ovh_test_login()
+{
   local r=$(ovh_cli --format json auth current-credential)
 
   if ovh_test_credential "$r" ; then
@@ -137,7 +166,8 @@ ovh_test_login() {
   return 0
 }
 
-function log() {
+function log()
+{
   if [[ -n $LOGFILE ]]
   then
     echo "$(date "+%Y-%m-%d_%H:%M:%S"): $*" >> $LOGFILE
@@ -147,7 +177,8 @@ function log() {
 
 # function Usage: color_output "grep_pattern"
 # dont filter output, only colorize the grep_pattern
-function color_output() {
+function color_output()
+{
   if [[ -n $1 ]]
   then
     # grep is a trick to colorize the current project in cloud.conf
@@ -158,7 +189,8 @@ function color_output() {
   fi
 }
 
-show_projects() {
+show_projects()
+{
   local clouds=$(ovh_cli --format json cloud project | jq -r .[])
   local r=$?
   local project
@@ -173,7 +205,8 @@ show_projects() {
 }
 
 # list all: snapshot_id name in reverse order by creationDate
-order_snapshots() {
+order_snapshots()
+{
   local p=$1
   # sort_by in on some advanced jq binary, version jq-1.6, it may fail on debian version
   ovh_cli --format json cloud project $p snapshot \
@@ -182,36 +215,52 @@ order_snapshots() {
 }
 
 # draft snapshot ordering helper to be used in saved scripts
-last_snapshot() {
+last_snapshot()
+{
   # p as $1
   # pattern as $2
   order_snapshots $1 | grep "$2" | head -1 | awk '{print $1}'
 }
 
 # function Usage:
-#   snapshot_list $project_id [-o]
+#   snapshot_list $project_id [-o] [output_type]
 #   $order if present force list to be order by creationDate decreasing
-snapshot_list() {
+#   sorting require jq 1.6
+snapshot_list()
+{
   local p=$1
-  local order=$2
-  local order_filter='.[]|'
+  local order=${2:-no}
+  local output_type=${3:-text}
+  local order_filter='.'
 
-  if [[ -n $order ]]
+  if [[ -n $order ]] && [[ $order == '-o'  || $order == 'yes' ]]
   then
     # sort_by is not supported by all version of jq so not by default
-    order_filter='.|sort_by(.creationDate)|reverse|.[]|'
+    order_filter='.|sort_by(.creationDate)|reverse'
   fi
-  ovh_cli --format json cloud project $p snapshot \
-    | jq -r "$order_filter
-      .id
-      +\" \"+.name
-      +\" \"+.status
-      +\" \"+.region
-      +\" \"+.creationDate
-      "
+
+  # echo "order $order output_type $output_type"
+
+  case $output_type in
+    json)
+      ovh_cli --format json cloud project $p snapshot \
+        | jq -r "$order_filter"
+      ;;
+    *)
+      ovh_cli --format json cloud project $p snapshot \
+        | jq -r "$order_filter |.[]|
+          .id
+          +\" \"+.name
+          +\" \"+.status
+          +\" \"+.region
+          +\" \"+.creationDate
+          "
+      ;;
+  esac
 }
 
-get_snapshot_status() {
+get_snapshot_status()
+{
   local p=$1
   local snapshot_id=$2
 
@@ -225,14 +274,16 @@ get_snapshot_status() {
   return 0
 }
 
-delete_snapshot() {
+delete_snapshot()
+{
   local p=$1
   local snap_id=$2
   ovh_cli --format json cloud project $p snapshot $snap_id delete \
     | grep -E '(^|status.*)'
 }
 
-snapshot_make_increment() {
+snapshot_make_increment()
+{
   local p=$1
   local instance_id=$2
 
@@ -277,7 +328,8 @@ snapshot_make_increment() {
   fi
 }
 
-instance_snapshot_and_delete() {
+instance_snapshot_and_delete()
+{
   local p=$1
   local instance_id=$2
   if snapshot_make_increment $p $instance_id; then
@@ -286,7 +338,8 @@ instance_snapshot_and_delete() {
   fi
 }
 
-get_flavor() {
+get_flavor()
+{
   local p=$1
   local flavor_name=$2
   # default value $REGION
@@ -304,8 +357,11 @@ get_flavor() {
   fi
 }
 
+# create_instance PROJECT_ID IMAGE_ID SSHKEY_ID HOSTNAME INIT_SCRIPT
+# you can change flavor by defining FLAVOR_NAME global variable.
 # outputs json
-create_instance() {
+create_instance()
+{
   local p=$1
   local image_id=$2
   local sshkey=$3
@@ -350,7 +406,8 @@ create_instance() {
 }
 
 # load a init_script and merge some content
-preprocess_init() {
+preprocess_init()
+{
   local init_script="$1"
 
   # extract APPEND_SCRIPTS value
@@ -371,14 +428,16 @@ preprocess_init() {
   echo $tmp_init
 }
 
-instance_list() {
+instance_list()
+{
   local p=$1
   # filter on public ip address only
   ovh_cli --format json cloud project $p instance \
     | show_json_instance many
 }
 
-rename_instance() {
+rename_instance()
+{
   local p=$1
   local instanceId=$2
   local new_name="$3"
@@ -387,7 +446,8 @@ rename_instance() {
 }
 
 # more versatile version of instance_list
-get_instance_status() {
+get_instance_status()
+{
   local p=$1
   local i=$2
   # $3 == FULL : full json output
@@ -422,7 +482,8 @@ get_instance_status() {
 #
 # field Order is important
 #  id ip  name status region flavor
-show_json_instance() {
+show_json_instance()
+{
   # filter IPv4
   # get flavor through planCode first part as present in both JSON
   local jq_filter='.id+" "+
@@ -434,6 +495,7 @@ show_json_instance() {
         +" "+.status
         +" "+.region
         +" "+(.planCode|split(".")[0])
+        +" "+.image.user
         '
 
   if [[ $# -eq 1 && "$1" == "many" ]]
@@ -446,18 +508,21 @@ show_json_instance() {
 
 # DRY func
 # function Usage: get_ip_from_json < $tmp_json_input
-get_ip_from_json() {
+get_ip_from_json()
+{
   show_json_instance | awk '{print $2}'
 }
 
 # output json
-list_sshkeys() {
+list_sshkeys()
+{
   local p=$1
   ovh_cli --format json cloud project $p sshkey
 }
 
 # output text
-get_sshkeys() {
+get_sshkeys()
+{
   local p=$1
   local name=$2
   if [[ ! -z "$name" ]]
@@ -470,7 +535,8 @@ get_sshkeys() {
   fi
 }
 
-get_domain_record_id() {
+get_domain_record_id()
+{
   # remove trailing dot if any
   local fqdn=${1%.}
   local domain=$(get_domain $fqdn)
@@ -487,7 +553,8 @@ get_domain_record_id() {
 # set forward and reverse DNS via API
 # same order as given in instance_list: ip, fqdn
 # instance needs to be ACTIVE and have an IP
-set_ip_domain() {
+set_ip_domain()
+{
   local ip=$1
   local fqdn=$2
 
@@ -507,7 +574,8 @@ set_ip_domain() {
   echo "  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}. "
 }
 
-get_domain() {
+get_domain()
+{
   local regexp="\.([a-zA-Z0-9-]+\.[a-z]+)$"
   if [[ "$1" =~ $regexp ]]
   then
@@ -521,7 +589,8 @@ get_domain() {
 
 # update or set a forward DNS record
 # parameter must have the same order as given in instance_list: ip fqdn
-set_forward_dns() {
+set_forward_dns()
+{
   local ip=$1
   local fqdn=$2
   local domain=$(get_domain $fqdn)
@@ -546,7 +615,8 @@ set_forward_dns() {
 }
 
 # for cleanup, unused, call it manually
-delete_dns_record() {
+delete_dns_record()
+{
   local fqdn=$1
   local domain=${fqdn#*.}
   local record=$(get_domain_record_id $fqdn)
@@ -560,13 +630,15 @@ delete_dns_record() {
   fi
 }
 
-delete_instance() {
+delete_instance()
+{
   local p=$1
   local i=$2
   ovh_cli cloud project $p instance $i delete
 }
 
-snapshot_create() {
+snapshot_create()
+{
   local p=$1
   local i=$2
   local snap_name="$3"
@@ -574,7 +646,8 @@ snapshot_create() {
     --snapshotName "$snap_name"
 }
 
-id_is_project() {
+id_is_project()
+{
   # return an array of project_id, -1 if not found
   local json=$(ovh_cli --format json cloud project)
   if ovh_test_credential "$json" ; then
@@ -586,7 +659,8 @@ id_is_project() {
   fi
 }
 
-set_project() {
+set_project()
+{
   local p=$1
 
   # check if the project_id exists
@@ -602,7 +676,8 @@ set_project() {
 
 # function Usage:
 #   write_conf conffile VAR=value VAR2=value2 DELETE=VAR3 ...
-write_conf() {
+write_conf()
+{
   local conffile="$1"
   shift
   # vars $2... format "var=val" or "DELETE=var_name"
@@ -647,7 +722,8 @@ write_conf() {
   fi
 }
 
-loadconf() {
+loadconf()
+{
     local conffile="$1"
     if [[ -e "$conffile" ]]
     then
@@ -657,7 +733,8 @@ loadconf() {
     return 1
 }
 
-set_flavor() {
+set_flavor()
+{
   local p=$1
   local flavor_name=$2
 
@@ -674,12 +751,13 @@ set_flavor() {
   fi
 }
 
-call_func() {
+call_func()
+{
   # auto detect functions name loop
   local func="$1"
   shift
 
-  local all_func=$(sed -n '/^[a-zA-Z_]\+(/ s/() {// p' $(readlink -f $0))
+  local all_func=$(sed -n '/^[a-zA-Z_]\+(/ s/()$// p' $(readlink -f $0))
   local found=0
   local f
   local r
@@ -711,7 +789,8 @@ call_func() {
 # grep for an image
 # use awk to get the image_id
 # Example:  find_image $PROJECT_ID | awk '/Debian 8$/ {print $1}'
-find_image() {
+find_image()
+{
   local p=$1
   if [[ $# -ge 2 ]] ; then
     local pattern="$2"
@@ -722,13 +801,17 @@ find_image() {
 }
 
 # list available images (this is not the same as snapshot)
-list_images() {
+list_images()
+{
   local p=$1
   local limit_osType=""
   local output_type=json
 
   if [[ $# -ge 2 ]] ; then
-    limit_osType="--osType $2"
+    # you can pass an empty value to force output_type for example
+    if [[ -n $2 ]] ; then
+      limit_osType="--osType $2"
+    fi
   fi
 
   if [[ $# -eq 3 ]] ; then
@@ -749,11 +832,31 @@ list_images() {
   esac
 }
 
-region_list() {
+region_list()
+{
    ovh_cli --format json cloud project $PROJECT_ID region | jq -r '.[]'
 }
 
-wait_for() {
+instance_set_rescuemode()
+{
+  local p=$1
+  local instance_id=$2
+  # TRUE or FALSE
+  local rescue=${3:-TRUE}
+  ovh_cli --format json cloud project $p instance $instance_id rescue-mode --rescue $rescue
+}
+
+instance_reboot()
+{
+  local p=$1
+  local instance_id=$2
+  # hard or soft
+  local reboot_type=${3:-soft}
+  ovh_cli cloud project \$PROJECT_ID instance 26b75b0c-80df-4f41-b086-ebcb6eeeb1c1 reboot --type $reboot_type
+}
+
+wait_for()
+{
   local p=$1
   local wait_for=$2
   local object_id=$3
@@ -839,7 +942,7 @@ wait_for() {
         break
       fi
 
-      if ssh -q -o StrictHostKeyChecking=no $sshuser@$ip \
+      if timeout 3s ssh -q -o StrictHostKeyChecking=no $sshuser@$ip \
         "echo \"logged IN \$USER@$ip \$(hostname -f)\" $((SECONDS - startt ))s" \
             2> /dev/null; then
         return 0
@@ -858,7 +961,8 @@ wait_for() {
   fi
 }
 
-wait_for_instance() {
+wait_for_instance()
+{
   local p=$1
   local instance_id=$2
   local max=$3
@@ -867,7 +971,8 @@ wait_for_instance() {
   return $?
 }
 
-wait_for_snapshot() {
+wait_for_snapshot()
+{
   local p=$1
   local snapshot_id=$2
   local max=$3
@@ -877,7 +982,8 @@ wait_for_snapshot() {
 }
 
 # cannot be called when sourced
-fail() {
+fail()
+{
   echo "$*"
   exit 1
 }
@@ -885,7 +991,8 @@ fail() {
 ###################################### main
 
 # prefix with 'function' keyword to not to be greped with --help. See extract_usage
-function main() {
+function main()
+{
   action=$1
   proj=$2
 
@@ -929,7 +1036,7 @@ function main() {
         fail "timeout $MAX_WAIT or error, instance is unavailable"
       fi
     ;;
-    list_ssh|get_ssh)
+    list_ssh|get_ssh|ssh_list)
       userkey=$3
       get_sshkeys $proj $userkey
     ;;
@@ -1051,6 +1158,10 @@ function main() {
           break
         fi
       done
+      ;;
+    list_images|image_list)
+      shift 2
+      list_images $proj linux text
       ;;
     *)
       echo "error: $action not found"
