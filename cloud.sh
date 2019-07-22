@@ -20,6 +20,7 @@
 #  ./cloud.sh create IMAGE_ID HOSTNAME SSHKEY_ID
 #  ./cloud.sh instance_list|list
 #  ./cloud.sh wait INSTANCE_ID
+#  ./cloud.sh snap_wait SNAPSHOT_ID
 #  ./cloud.sh list_ssh|get_ssh
 #  ./cloud.sh rename INSTANCE_ID NEW_NAME
 #  ./cloud.sh status [INSTANCE_ID]
@@ -376,7 +377,7 @@ create_instance()
   fi
   local flavor_id=$(get_flavor $p $myflavor)
 
-  if [[ ! -z "$init_script" && -e "$init_script" ]]
+  if [[ -n "$init_script" && -e "$init_script" ]]
   then
     # with an init_script
     local tmp_init=$(preprocess_init "$init_script")
@@ -873,26 +874,26 @@ wait_for()
   local cmd=""
 
   case $wait_for in
-  instance)
-    # greped against JSON output because we are going to
-    # extract many informations IPv4, sshuser
-    cmd="get_instance_status $p $object_id FULL | tee $tmp \
-        | grep -q '\"status\": \"ACTIVE\"'"
-    #'"
-    cmd_success="show_json_instance < $tmp"
-    wait_for_ssh=true
-    ;;
-  snapshot)
-    cmd="get_snapshot_status $p $object_id FULL | tee $tmp \
-        | grep -q -i '\"status\": \"active\"'"
-    #'"
-    cmd_success="jq . < $tmp"
-    wait_for_ssh=false
-    ;;
-  *)
-    echo "don't know how to get status for '$wait_for'"
-    return 1
-    ;;
+    instance)
+      # greped against JSON output because we are going to
+      # extract many informations IPv4, sshuser
+      cmd="get_instance_status $p $object_id FULL | tee $tmp \
+          | grep -q '\"status\": \"ACTIVE\"'"
+      #'"
+      cmd_success="show_json_instance < $tmp"
+      wait_for_ssh=true
+      ;;
+    snapshot)
+      cmd="get_snapshot_status $p $object_id FULL | tee $tmp \
+          | grep -q -i '\"status\": \"active\"'"
+      #'"
+      cmd_success="jq . < $tmp"
+      wait_for_ssh=false
+      ;;
+    *)
+      echo "don't know how to get status for '$wait_for'"
+      return 1
+      ;;
   esac
 
   while true
@@ -1004,6 +1005,9 @@ function main()
   fi
 
   case $action in
+    show_projects)
+      show_projects
+      ;;
     snap_list|get_snap|snapshot_list)
       ordering=$3
       snapshot_list $proj $ordering
@@ -1045,8 +1049,8 @@ function main()
     ;;
     rename)
       instance=$3
-      new_name=$4
-      rename_instance $proj $instance $new_name
+      new_name="$4"
+      rename_instance $proj $instance "$new_name"
       get_instance_status $proj $instance
       ;;
     status)
@@ -1065,6 +1069,14 @@ function main()
         host=$(get_instance_status $proj $instance | awk '{print $3}')
       fi
       snapshot_create $proj $instance "$host"
+      ;;
+    snap_wait)
+      snap_id=$3
+      if wait_for_snapshot $proj $snap_id $MAX_WAIT ; then
+        echo "OK"
+      else
+        fail "timeout $MAX_WAIT or error, snapshot not found"
+      fi
       ;;
     del_snap|snap_delete)
       snap_id=$3
@@ -1117,7 +1129,7 @@ function main()
     set_project)
       if set_project $proj
       then
-        echo "project '$proj'written in '$CONFFILE'"
+        echo "project '$proj' written in '$CONFFILE'"
         exit 0
       else
         exit 1

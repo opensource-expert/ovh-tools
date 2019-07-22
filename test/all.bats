@@ -57,6 +57,7 @@ _check_failure()
 }
 
 setup() {
+  # special check before_all : https://github.com/bats-core/bats-core/issues/39
 	# echo "BATS_TEST_NUMBER $BATS_TEST_NUMBER $BATS_TEST_NAME $BATS_TEST_DESCRIPTION" >> log
   if [[ "$BATS_TEST_NUMBER" -eq 1 && $BATS_TEST_DESCRIPTION == '_check_failure once' ]]; then
 		echo _check_before_run >> log
@@ -72,6 +73,8 @@ setup() {
 #}
 
 @test "_check_failure once" {
+  # empty test for testing _check_before_run
+  return 0
 }
 
 @test "CONFFILE as defaut value" {
