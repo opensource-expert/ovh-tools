@@ -8,12 +8,15 @@ init/init_upgrade.sh
 /home/sylvain/code/agu3l/projet-ville-annecy/scripts/post_install
 "
 
-# enable root login
-sed -i -e 's/^.\+ssh-rsa/ssh-rsa/' /root/.ssh/authorized_keys
-# set timezone and clock
-echo Europe/Paris > /etc/timezone 
-dpkg-reconfigure -f noninteractive tzdata
-
 # fix locale
 sed -i '/fr_FR.UTF-8/ s/^# //' /etc/locale.gen
 locale-gen en_US.UTF-8
+
+# enable root login
+sed -i -e 's/^.\+ssh-rsa/ssh-rsa/' /root/.ssh/authorized_keys
+
+# set timezone and clock
+/usr/bin/timedatectl set-timezone Europe/Paris
+#echo Europe/Paris > /etc/timezone 
+#dpkg-reconfigure -f noninteractive tzdata
+

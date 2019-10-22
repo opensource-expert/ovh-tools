@@ -56,6 +56,16 @@ _check_failure()
   fi
 }
 
+create_some_instance() 
+{
+  local image_id=$(find_image $PROJECT_ID "Debian 8$" | awk '{print $1; exit}')
+  local sshkey=$(get_sshkeys $PROJECT_ID $SSHKEY_NAME)
+  local hostname="dummy$$.$DOMAIN_NAME"
+  local init_script=""
+  export FLAVOR_NAME=$TEST_FLAVOR_NAME
+  create_instance $PROJECT_ID $image_id $sshkey $hostname $init_script
+}
+
 setup() {
   # special check before_all : https://github.com/bats-core/bats-core/issues/39
 	# echo "BATS_TEST_NUMBER $BATS_TEST_NUMBER $BATS_TEST_NAME $BATS_TEST_DESCRIPTION" >> log
@@ -209,4 +219,12 @@ setup() {
 		sed -i -e "/$i/ d" $INSTANCE_TO_DELETE
   done
   [[ $(wc -l < $INSTANCE_TO_DELETE) -eq 0 ]]
+}
+
+@test "create_instance fail if flavor is not found" {
+  _load_if_OK
+  TEST_FLAVOR_NAME=pipo
+  run create_some_instance
+  echo "create_some_instance $output"
+  [[ $status -ne 0 ]]
 }

@@ -13,7 +13,7 @@ FLAVOR_NAME=s1-2
 
 mytmp=$TMP_DIR/saved_debian_10.$$
 
-myimage=$(order_snapshots $PROJECT_ID | awk '$2 == "Debian10_base" { print $1}')
+myimage=$(find_image $PROJECT_ID 'Debian.10$' | awk '{print $1}')
 mysshkey=$(get_sshkeys $PROJECT_ID sylvain2016)
 myinit_script=$SCRIPTDIR/init/init_root_login_OK.sh
 

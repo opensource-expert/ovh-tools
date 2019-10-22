@@ -10,14 +10,19 @@ then
   echo "snap_pattern is empty"
   exit 1
 fi
-myhostname="tmp-$$.opensource-expert.com"
-FLAVOR_NAME=s1-8
 
-mytmp=$TMP_DIR/saved_debian9_s1-8.$$
+myhostname="tmp-$$.opensource-expert.com"
+if [[ $# -ge 2 ]]
+then
+  myhostname=$2
+fi
+
+FLAVOR_NAME=s1-2
+mytmp=$TMP_DIR/saved_debian9_$FLAVOR_NAME.$$
 
 myimage=$(last_snapshot $PROJECT_ID "$snap_pattern")
 
-echo "restoring fo '$snap_pattern' => myimage $myimage ..."
+echo "restoring fo '$snap_pattern' => myimage $myimage hostname $myhostname ..."
 mysshkey=$(get_sshkeys $PROJECT_ID | awk '/sylvain/ {print  $1; exit}')
 myinit_script=$SCRIPTDIR/init/init_root_login_OK.sh
 

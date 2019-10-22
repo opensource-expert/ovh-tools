@@ -369,6 +369,16 @@ create_instance()
   local hostname=$4
   local init_script=$5
 
+  if [[ -z "$sshkey" ]]
+  then
+    fail "'\$sshkey' empty"
+  fi
+
+  if [[ -z "$hostname" ]]
+  then
+    fail "'\$hostname' empty"
+  fi
+
   local myflavor=$FLAVOR_NAME
   if [[ -z "$myflavor" ]]
   then
@@ -377,9 +387,15 @@ create_instance()
   fi
   local flavor_id=$(get_flavor $p $myflavor)
 
+  if [[ -z "$flavor_id" ]]
+  then
+    fail "'$myflavor' not found flavor_id on region $REGION"
+  fi
+
+
   if [[ -n "$init_script" && -e "$init_script" ]]
   then
-    # with an init_script
+    # with an init_shostname
     local tmp_init=$(preprocess_init "$init_script")
 
     # we merge the init_script in the outputed json so it becomes parsable
@@ -534,6 +550,11 @@ get_sshkeys()
     # list all
     list_sshkeys $p | jq -r '.[]|.id+" "+.name'
   fi
+}
+
+list_manageable_domains()
+{
+  ovh_cli --format json domain | jq -r '.[]'
 }
 
 get_domain_record_id()
@@ -742,7 +763,7 @@ set_flavor()
   local flavor_id=$(get_flavor $p $flavor_name)
   if [[ -z "$flavor_id" ]]
   then
-    echo "error: '$flavor_name' seems not to be a valid flavor"
+    echo "error: '$flavor_name' seems not to be a valid flavor or doesn't exist on region $REGION"
     echo "to list all flavor use:"
     echo "  $ME call get_flavor $p"
     return 1
@@ -854,6 +875,15 @@ instance_reboot()
   # hard or soft
   local reboot_type=${3:-soft}
   ovh_cli cloud project \$PROJECT_ID instance 26b75b0c-80df-4f41-b086-ebcb6eeeb1c1 reboot --type $reboot_type
+}
+
+sshkey_create()
+{
+  local p=$1
+  local sshkey_name=$2
+  local public_key_fname=$3
+
+  ovh_cli cloud project $p sshkey #name * #publicKey *
 }
 
 wait_for()
@@ -985,7 +1015,8 @@ wait_for_snapshot()
 # cannot be called when sourced
 fail()
 {
-  echo "$*"
+  # write on stderr
+  >&2 echo "error:${BASH_SOURCE[1]}:${FUNCNAME[1]}:${BASH_LINENO[0]}: $*"
   exit 1
 }
 

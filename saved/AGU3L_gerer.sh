@@ -25,6 +25,7 @@ FLAVOR_NAME=s1-2
 mytmp=$TMP_DIR/saved_debian9_gerer.$$
 
 myimage=$(find_image $PROJECT_ID 'Debian.9$' | awk '{print $1}')
+#myimage=$(find_image $PROJECT_ID 'Centos.7$' | awk '{print $1}')
 mysshkey=$(get_sshkeys $PROJECT_ID sylvain2016)
 myinit_script=$SCRIPTDIR/init/gerer_post_install.sh
 

@@ -49,6 +49,29 @@ lors du create, si la valeur REGION ne match pas celle de l'image:
 * forcer à celle de l'image
 * stopper et afficher un warning
 
+## move
+
+Déplacere une VM ou un snapshot entre projet ou entre région.
+
+Exemple d'API:
+
+```
+./cloud.sh move_snapshot SNAPSHOT_ID REGION
+./cloud.sh move_snapshot SNAPSHOT_ID PROJECT_ID
+./cloud.sh move_instance INSTANCE_ID REGION
+./cloud.sh move_instance INSTANCE_ID PROJECT_ID
+```
+
+Étapes snapshot
+
+1. Créer une VM dans la région destination
+2. Installer les outils openstack sur la VM de move
+3. Créer une VM dans la région source
+4. Installer les outils openstack sur la VM de move source
+5. Dumper le fichier qcow2 du snapshot dans la VM de move source
+6. copier le fichier image vers la VM de move destination
+7. depuis la VM destination installer l'image qcow2 dans l'environnement openstack
+
 ## ajouter init
 
 Initialisation des credentials et de la config de l'outil (voire installation de ovh-cli ?)
