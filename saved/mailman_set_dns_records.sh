@@ -4,8 +4,8 @@ set -euo pipefail
 
 MYDOMAIN=opensource-expert.com
 
-machine_name=$1.$MYDOMAIN
-myhostname=$2.$MYDOMAIN
+machine_name=$1
+myhostname=$2
 ip=$3
 
 echo "set DNS A record: $myhostname $ip"

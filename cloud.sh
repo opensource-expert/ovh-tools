@@ -319,7 +319,7 @@ snapshot_make_increment()
   local new_snapshot_json=$(ovh_cli --format json cloud project $p snapshot |
       jq -r ".[]|select(.name == \"$new_snap_name\")")
   jq . <<< "$new_snapshot_json"
-  local wait_timeout=120
+  local wait_timeout=240
   if wait_for_snapshot "$p" "$(jq -r .id <<< "$new_snapshot_json")" $wait_timeout; then
     echo "OK snapshoted"
     return 0
@@ -499,19 +499,39 @@ get_instance_status()
 #
 # field Order is important
 #  id ip  name status region flavor
+#
+# When instant is in error the json is:
+#     {
+#       "created": "2020-02-16T05:46:35Z",
+#       "flavorId": "30223b8d-0b3e-4a42-accb-ebc3f5b0194c",
+#       "id": "e35826e2-db35-4dd9-a3a3-101ba97a7157",
+#       "imageId": "d3f931aa-d4ca-40d4-ad4c-a31a2d0a5e3b",
+#       "ipAddresses": [],
+#       "monthlyBilling": null,
+#       "name": "static.obj8.ovh",
+#       "operationIds": [],
+#       "planCode": "s1-2.consumption",
+#       "region": "GRA7",
+#       "sshKeyId": "63336c73646d4670626a49774d54593d",
+#       "status": "ERROR"
+#   }
 show_json_instance()
 {
   # filter IPv4
   # get flavor through planCode first part as present in both JSON
+  # +" "+(.planCode|split(".")[0])
   local jq_filter='.id+" "+
         (
-        .ipAddresses[]|
-          select(.version == 4 and  .type == "public")
-        ).ip
+        if (.ipAddresses | length) > 0 then
+          (.ipAddresses[] | select(.version == 4 and  .type == "public")).ip
+				else
+					"no_ip"
+				end
+        )
         +" "+.name
         +" "+.status
         +" "+.region
-        +" "+(.planCode|split(".")[0])
+        +" "+.planCode
         +" "+.image.user
         '
 
@@ -541,7 +561,7 @@ list_sshkeys()
 get_sshkeys()
 {
   local p=$1
-  local name=$2
+  local name=${2:-}
   if [[ ! -z "$name" ]]
   then
     # only one id
@@ -583,6 +603,7 @@ set_ip_domain()
   local domain=$(get_domain $fqdn)
 
   set_forward_dns $ip $fqdn
+  local ret=$?
 
   # wait a bit
   sleep 1
@@ -594,6 +615,8 @@ set_ip_domain()
 
   echo "  if needed: re-set reverse DNS with:"
   echo "  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}. "
+
+  return $ret
 }
 
 get_domain()
@@ -620,20 +643,27 @@ set_forward_dns()
 
   local record=$(get_domain_record_id $fqdn)
 
+  local ret
   if [[ -z "$record" || "$record" == null ]]
   then
     # must be created
     ovh_cli --format json domain zone $domain record create \
       --target $ip --ttl $DNS_TTL --subDomain $subdomain --fieldType A
+    ret=$?
   else
     # update existing recors
     ovh_cli --format json domain zone $domain record $record put \
       --target $ip \
       --ttl $DNS_TTL
+    ret=$?
   fi
 
-  # flush domain modification
-  ovh_cli domain zone $domain refresh post
+  if [[ $ret -eq 0 ]] ; then
+    # flush domain modification
+    ovh_cli domain zone $domain refresh post
+  fi
+
+  return $ret
 }
 
 # for cleanup, unused, call it manually
@@ -883,7 +913,26 @@ sshkey_create()
   local sshkey_name=$2
   local public_key_fname=$3
 
-  ovh_cli cloud project $p sshkey #name * #publicKey *
+  if [[ ! -f $public_key_fname ]] ; then
+      fail "public_key_fname not found: '$public_key_fname'"
+  fi
+
+  local pubkey="$(cat $public_key_fname)"
+
+  # bug output: Invalid region parameter
+  local out=$(ovh_cli cloud project $p sshkey create --name $sshkey_name \
+      --publicKey "$pubkey")
+  if [[ $out == 'Invalid region parameter' ]] ; then
+    local check=$(ovh_cli --format json cloud project $p sshkey | \
+      jq -r '.[]|select(.name == "deleteme")|.publicKey')
+
+    if [[ "$pubkey" == "$check" ]] ; then
+      echo OK
+    else
+      fail "key creation failure"
+    fi
+  fi
+
 }
 
 wait_for()
@@ -926,10 +975,12 @@ wait_for()
       ;;
   esac
 
+  local timeout_reached=0
   while true
   do
     if [[ $(( SECONDS - startt )) -gt $max ]] ; then
       echo "timeout reached: $max"
+      timeout_reached=1
       break
     fi
 
@@ -949,12 +1000,13 @@ wait_for()
     sleep $SLEEP_DELAY
   done
 
-  if [[ $(wc -l < $tmp) -eq 0 ]] ; then
+  if [[ $(wc -l < $tmp) -eq 0 || $timeout_reached -eq 1 ]] ; then
     rm -f $tmp
     return 1
   fi
 
   if $wait_for_ssh ; then
+    local ssh_timeout_reached=0
     # read IPv4
     local ip=$(get_ip_from_json < $tmp)
     local sshuser=$(jq -r '.image.user' < $tmp)
@@ -970,6 +1022,7 @@ wait_for()
     do
       if [[ $(( SECONDS - startt )) -gt $max ]] ; then
         echo "ssh timeout reached: $max"
+        ssh_timeout_reached=1
         break
       fi
 
@@ -1193,14 +1246,21 @@ function main()
       src="$3"
       shift 3
       # search code loop lookup
-      for f in $src "saved/$3"
+      local found=0
+      local f
+      for f in $src "saved/$src"
       do
         if [[ -e "$src" ]] ; then
           # argument from $4 ...
           source $src "$@"
+          found=1
           break
         fi
       done
+      if [[ $found -eq 0 ]] ; then
+        echo "saved script not found: '$src'"
+        exit 1
+      fi
       ;;
     list_images|image_list)
       shift 2

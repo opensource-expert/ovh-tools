@@ -1,7 +1,8 @@
 #!/bin/bash
 # cloud.sh saved session
 
-#set -x
+set -x
+set -euo pipefail
 
 echo "args: $*"
 snap_pattern=$1
@@ -11,10 +12,12 @@ then
   exit 1
 fi
 
-myhostname="tmp-$$.opensource-expert.com"
 if [[ $# -ge 2 ]]
 then
   myhostname=$2
+else
+  myhostname="tmp-$$.opensource-expert.com"
+  echo "generating hostname: $myhostname"
 fi
 
 FLAVOR_NAME=s1-2
@@ -26,6 +29,8 @@ echo "restoring fo '$snap_pattern' => myimage $myimage hostname $myhostname ..."
 mysshkey=$(get_sshkeys $PROJECT_ID | awk '/sylvain/ {print  $1; exit}')
 myinit_script=$SCRIPTDIR/init/init_root_login_OK.sh
 
+echo "press any key to continue"
+read
 
 instance=$(create_instance $PROJECT_ID "$myimage" "$mysshkey" \
   "$myhostname" "$myinit_script" \

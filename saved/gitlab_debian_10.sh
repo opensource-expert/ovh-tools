@@ -8,7 +8,7 @@ if [[ $# -ge 1 ]]
 then
   myhostname=${1:-}
 else
-  myhostname="gitlab.opj8.ovh"
+  myhostname="gitlab.obj8.ovh"
 fi
 
 # 1vcpu 4G RAM
