@@ -651,11 +651,16 @@ set_forward_dns()
       --target $ip --ttl $DNS_TTL --subDomain $subdomain --fieldType A
     ret=$?
   else
-    # update existing recors
-    ovh_cli --format json domain zone $domain record $record put \
-      --target $ip \
-      --ttl $DNS_TTL
-    ret=$?
+    if ! check_is_protected_record $fqdn ; then
+      # update existing recors
+      ovh_cli --format json domain zone $domain record $record put \
+        --target $ip \
+        --ttl $DNS_TTL
+      ret=$?
+    else
+      echo "record protected '$fqdn'"
+      ret=1
+    fi
   fi
 
   if [[ $ret -eq 0 ]] ; then
@@ -663,6 +668,18 @@ set_forward_dns()
     ovh_cli domain zone $domain refresh post
   fi
 
+  return $ret
+}
+
+# PROTECTED_RECORD_LIST is empty by default set it in cloud.conf
+check_is_protected_record()
+{
+  local ret=1
+  local protected=${PROTECTED_RECORD_LIST:-}
+  if [[ -e $protected ]] ; then
+    grep -q --line-regexp -F "$1" $protected
+    ret=$?
+  fi
   return $ret
 }
 
@@ -686,7 +703,15 @@ delete_instance()
 {
   local p=$1
   local i=$2
-  ovh_cli cloud project $p instance $i delete
+
+  local instance_mode=$(get_instance_status $p $i FULL | jq -r '.planCode')
+
+  if [[ $instance_mode =~ consumption ]] ; then
+    ovh_cli cloud project $p instance $i delete
+  else
+    echo "instance_mode $instance_mode delete protected"
+    return 1
+  fi
 }
 
 snapshot_create()
@@ -809,6 +834,8 @@ call_func()
   local func="$1"
   shift
 
+  # only func that format are callable.
+  # use: function or open brace on the same line to make it non-callable
   local all_func=$(sed -n '/^[a-zA-Z_]\+(/ s/()$// p' $(readlink -f $0))
   local found=0
   local f
