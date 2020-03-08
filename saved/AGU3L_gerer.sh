@@ -23,7 +23,7 @@ REGION=GRA5
 FLAVOR_NAME=s1-2
 #FLAVOR_NAME=s1-8
 
-mytmp=$TMP_DIR/saved_debian9_gerer.$$
+mytmp=$TMP_DIR/saved_debian10_gerer.$$
 
 myimage=$(find_image $PROJECT_ID 'Debian.10$' | awk '{print $1}')
 #myimage=$(find_image $PROJECT_ID 'Centos.7$' | awk '{print $1}')

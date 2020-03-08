@@ -17,7 +17,7 @@
 #  ./cloud.sh help
 #  ./cloud.sh snap_list|get_snap|snapshot_list [-o]
 #  ./cloud.sh image_list [OS_TYPE] [OUTPUT_FORMAT]
-#  ./cloud.sh create IMAGE_ID HOSTNAME SSHKEY_ID
+#  ./cloud.sh create IMAGE_ID SSHKEY_ID HOSTNAME [INIT_SCRIPT]
 #  ./cloud.sh instance_list|list
 #  ./cloud.sh wait INSTANCE_ID
 #  ./cloud.sh snap_wait SNAPSHOT_ID
@@ -74,7 +74,10 @@ else
   ME=$(readlink -f "$BASH_SOURCE")
 fi
 
-# help
+
+############################################# functions
+
+# display help from script header comment
 function extract_usage()
 {
    sed -n -e '/^# Usage:/,/^$/ s/^# \?//p' < $0
@@ -97,6 +100,8 @@ fi
 ######################################################## configuration
 SCRIPTDIR=$(dirname $ME)
 OVH_CLIDIR=$SCRIPTDIR/../ovh-cli
+DEBUG=1
+DEFAULT_SSH_KEY_NAME=""
 
 # you can "export CONFFILE=some_file" to override
 # usefull for testing
@@ -118,13 +123,12 @@ TMP_DIR=/dev/shm
 
 LOGFILE=./my.log
 
-# DEFAULTS
+# OVH DEFAULTS
 REGION=WAW1
 DNS_TTL=60
 DEFAULT_FLAVOR=s1-2
 
 ###################################### functions
-
 
 # ovh-cli seems to require json def of all api in its own folder,
 # we need to change??
@@ -138,7 +142,6 @@ ovh_cli()
   log "$@ ==> $r"
   return $r
 }
-
 
 ovh_test_credential()
 {
@@ -324,10 +327,101 @@ snapshot_make_increment()
     echo "OK snapshoted"
     return 0
   else
-    echo "error: timeout $wait_timeout or error, snapshot is unavailable"
+    error "timeout $wait_timeout or error, snapshot is unavailable"
     return 1
   fi
 }
+
+# Usage: snapshot_restore_instance $project_id snap_pattern [FLAVOR_NAME] [<force_hostname>]
+snapshot_restore_instance()
+{
+  set -euo pipefail
+
+  local p=$1
+
+  echo "args: $*"
+  if [[ $# -lt 2 ]]
+  then
+    error "error: snapshot_restore_instance missing argument"
+    return 1
+  fi
+
+  local snap_pattern=$2
+
+  if [[ $# -ge 3 ]]
+  then
+    FLAVOR_NAME=$3
+  fi
+
+  local force_hostname=""
+  if [[ $# -ge 4 ]]
+  then
+    force_hostname=$4
+  fi
+
+  echo "fetching cloud data ..."
+
+  local myimage=$(last_snapshot $p "$snap_pattern")
+  local image_json=$(get_snapshot_status $p $myimage FULL)
+  local hostname=$(jq -r .name <<< "$image_json")
+  local image_region=$(jq -r .region <<< "$image_json")
+
+  local mysshkey=$(get_sshkeys $p | awk "/$DEFAULT_SSH_KEY_NAME/ {print  \$1; exit}")
+  local myinit_script=${DEFAULT_RESTORE_SCRIPT:-}
+
+  fail_if_empty myimage hostname mysshkey image_region
+
+  # remove backup count suffix
+  local myhostname=$(echo $hostname | sed -e 's/-[0-9]\+$//')
+  if [[ -n $force_hostname ]] ; then
+    debug "force_hostname: '$myhostname' becomes '$force_hostname'"
+    myhostname=$force_hostname
+  fi
+
+  # reporting output
+  cat << EOT
+restoring for pattern '$snap_pattern' => myimage $myimage
+flavor: $FLAVOR_NAME
+image hostname '$hostname' ==> myhostname '$myhostname'
+sshKeyId '$mysshkey'
+region: $image_region
+EOT
+
+  if [[ $REGION != $image_region ]] ; then
+    debug "REGION was set to '$REGION' image_region '$image_region' FORCED"
+    # force region from image
+    REGION=$image_region
+  fi
+
+  local instance
+  debug "create_instance $p \"$myimage\" \"$mysshkey\"  \"$myhostname\" \"$myinit_script\""
+  instance=$(create_instance $p "$myimage" "$mysshkey"  "$myhostname" "$myinit_script" \
+    | jq_or_fail -r '.id')
+
+  if [[ ! $instance =~ ^[0-9a-f-]+$ ]] ; then
+    fail "instance_id invalid: '$instance'"
+  fi
+
+  local ip instance_json
+  if wait_for_instance $p "$instance" 600 ; then
+    instance_json=$(get_instance_status $p $instance FULL)
+    ip=$(get_ip_from_json <<< "$instance_json")
+    # re-read hostname from JSON
+    hostname=$(jq -r '.name' <<< "$instance_json")
+    echo "hostname from JSON: $hostname, using $myhostname"
+    set_ip_domain $ip $myhostname
+  fi
+
+  # post setup if success
+  if [[ -n "$ip" ]]
+  then
+    # empty my ssh/known_hosts
+    ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $myhostname
+    ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $ip
+  fi
+}
+
+############################## instance manipulation
 
 instance_snapshot_and_delete()
 {
@@ -349,12 +443,12 @@ get_flavor()
   if [[ -z "$flavor_name" ]]
   then
     ovh_cli --format json cloud project $p flavor \
-      | jq -r '.[]|select(.osType != "windows")
+      | jq_or_fail -r '.[]|select(.osType != "windows")
           .id+" "+.name+" "+(.vcpus|tostring)+" CPU "+(.ram|tostring)+" Mo "+.region'
   else
     # must return a single flavor for a region
     ovh_cli --format json cloud project $p flavor \
-      | jq -r ".[]|select(.name == \"$flavor_name\" and .region == \"$region\").id"
+      | jq_or_fail -r ".[]|select(.name == \"$flavor_name\" and .region == \"$region\").id"
   fi
 }
 
@@ -367,19 +461,12 @@ create_instance()
   local image_id=$2
   local sshkey=$3
   local hostname=$4
-  local init_script=$5
+  local init_script=${5:-}
 
-  if [[ -z "$sshkey" ]]
-  then
-    fail "'\$sshkey' empty"
-  fi
-
-  if [[ -z "$hostname" ]]
-  then
-    fail "'\$hostname' empty"
-  fi
+  fail_if_empty sshkey hostname
 
   local myflavor=$FLAVOR_NAME
+
   if [[ -z "$myflavor" ]]
   then
     # you can define it in cloud.conf
@@ -391,7 +478,6 @@ create_instance()
   then
     fail "'$myflavor' not found flavor_id on region $REGION"
   fi
-
 
   if [[ -n "$init_script" && -e "$init_script" ]]
   then
@@ -407,7 +493,7 @@ create_instance()
       --region $REGION \
       --sshKeyId $sshkey \
       --userData "$(cat $tmp_init)" \
-        | jq ". + {\"init_script\" : \"$tmp_init\"}"
+        | jq_or_fail ". + {\"init_script\" : \"$tmp_init\"}"
 
     rm $tmp_init
   else
@@ -577,6 +663,13 @@ list_manageable_domains()
   ovh_cli --format json domain | jq -r '.[]'
 }
 
+get_domain_zone()
+{
+  # get the full zone in txt format
+  ovh_cli --format json domain zone $1 export | jq -r
+}
+
+# get_domain_record_id $fqdn [$fieldType]
 get_domain_record_id()
 {
   # remove trailing dot if any
@@ -590,6 +683,29 @@ get_domain_record_id()
     --subDomain $subdomain \
     --fieldType $fieldType \
     | jq -r '.[0]'
+}
+
+get_domain_all_records()
+{
+  # remove trailing dot if any
+  local domain=${1%.}
+
+  if [[ -z $domain ]] ; then
+    error "domain empty"
+    return 1
+  fi
+
+  local record_ids=$(ovh_cli --format json domain zone $domain record | jq -r '.[]')
+  local r
+  for r in $record_ids
+  do
+    echo "$r $(ovh_cli --format json domain zone $domain record $r | \
+      jq -r '.subDomain
+          +" "+(.ttl|tostring)
+          +" IN "+.fieldType
+          +" "+.target'
+      )"
+  done
 }
 
 # set forward and reverse DNS via API
@@ -665,7 +781,54 @@ set_forward_dns()
 
   if [[ $ret -eq 0 ]] ; then
     # flush domain modification
-    ovh_cli domain zone $domain refresh post
+    dns_flush $domain
+  fi
+
+  return $ret
+}
+
+# update or set a free DNS record
+# set_dns_record [--no-flush] $fqdn $record_type "$record_value"
+set_dns_record()
+{
+  local flush=1
+  if [[ $1 == '--no-flush' ]] ; then
+    flush=0
+    shift
+  fi
+
+  local fqdn=$1
+  local record_type="$2"
+  local record_value="$3"
+  local domain=$(get_domain $fqdn)
+  local subdomain=${fqdn/.$domain/}
+
+  local record=$(get_domain_record_id $fqdn "$record_type")
+
+  local ret
+  if [[ -z "$record" || "$record" == null ]]
+  then
+    # must be created
+    ovh_cli --format json domain zone $domain record create \
+      --target "$record_value" --ttl $DNS_TTL --subDomain $subdomain --fieldType $record_type
+    ret=$?
+  else
+    # update existing recors
+    ovh_cli --format json domain zone $domain record $record put \
+      --target "$record_value" \
+      --ttl $DNS_TTL
+    ret=$?
+  fi
+
+  if [[ $ret -eq 0 ]] ; then
+    if [[ $flush -eq 1 ]]; then
+      # flush domain modification
+      dns_flush $domain
+    else
+      >&2 echo "no flush: $domain"
+    fi
+  else
+    error "ret code '$ret' no dns flush"
   fi
 
   return $ret
@@ -684,19 +847,33 @@ check_is_protected_record()
 }
 
 # for cleanup, unused, call it manually
+# delete_dns_record $fqdn [$fieldType]
 delete_dns_record()
 {
-  local fqdn=$1
-  local domain=${fqdn#*.}
-  local record=$(get_domain_record_id $fqdn)
+  local fqdn=${1%.}
+  local domain=$(get_domain $fqdn)
+  local fieldType=${2:-A}
+  local record=$(get_domain_record_id $fqdn $fieldType)
 
   if [[ -z "$record" || "$record" == null ]]
   then
-    echo "not found"
+    error "record '$fqdn' '$fieldType' not found"
   else
     ovh_cli domain zone $domain record $record delete
-    ovh_cli domain zone $domain refresh post
+    dns_flush $domain
   fi
+}
+
+dns_flush()
+{
+  local domain=${1%.}
+  if [[ -z $domain ]] ; then
+    error "dns_flush: domain is empty"
+    return 1
+  fi
+  ovh_cli domain zone $domain refresh post
+  ovh_cli domain zone $domain task
+  ovh_cli domain zone $domain status
 }
 
 delete_instance()
@@ -970,12 +1147,12 @@ wait_for()
   local max=$4
 
   if [[ -z "$max" ]] ; then
-    echo "no max"
+    error "no max"
     return 1
   fi
 
   local startt=$SECONDS
-  local tmp=$TMP_DIR/wait_$object_id.$$
+  local tmp=$TMP_DIR/wait_${object_id}.$$
   local wait_for_ssh=false
   local cmd=""
 
@@ -1001,6 +1178,8 @@ wait_for()
       return 1
       ;;
   esac
+
+  debug "wait_for: cmd '$cmd' cmd_success '$cmd_success'"
 
   local timeout_reached=0
   while true
@@ -1092,12 +1271,74 @@ wait_for_snapshot()
   return $?
 }
 
-# cannot be called when sourced
-fail()
+############################### helper non callable function (prefixed by function keyword)
+
+function fail()
+{
+  error "${BASH_SOURCE[1]}:${FUNCNAME[1]}:${BASH_LINENO[0]}: $*"
+  exit 1
+}
+
+function error()
 {
   # write on stderr
-  >&2 echo "error:${BASH_SOURCE[1]}:${FUNCNAME[1]}:${BASH_LINENO[0]}: $*"
-  exit 1
+  >&2 echo "error: $*"
+}
+
+function debug()
+{
+  if [[ $DEBUG -eq 1 ]] ; then
+    # write on stderr
+    >&2 echo "debug: $*"
+  fi
+}
+
+# stop_script is the main function which kill INT (Ctrl-C) your script
+# it doesn't exit because you can source it too.
+# you don't have to call this function unless you extend some fail_if function
+function stop_script()
+{
+  # test whether we are in interactive shell or not
+  if [[ $- == *i* ]]
+  then
+    # autokill INT myself = STOP
+    kill -INT $$
+  else
+    exit $1
+  fi
+}
+
+function fail_if_dir_not_exists()
+{
+  local d=$1
+  if [[ ! -d "$d" ]] ; then
+    error "folder not found: '$d' at ${BASH_SOURCE[1]}:${FUNCNAME[1]} line ${BASH_LINENO[0]}"
+    stop_script 3
+  fi
+}
+
+function fail_if_file_not_exists()
+{
+  local f=$1
+  if [[ ! -f "$f" ]] ; then
+    error "file not found: '$f' at ${BASH_SOURCE[1]}:${FUNCNAME[1]} line ${BASH_LINENO[0]}"
+    stop_script 3
+  fi
+}
+
+function fail_if_empty()
+{
+  local varname
+  local v
+  # allow multiple check on the same line
+  for varname in $*
+  do
+    eval "v=\$$varname"
+    if [[ -z "$v" ]] ; then
+      error "$varname empty or unset at ${BASH_SOURCE[1]}:${FUNCNAME[1]} line ${BASH_LINENO[0]}"
+      stop_script 4
+    fi
+  done
 }
 
 ###################################### main
@@ -1123,11 +1364,11 @@ function main()
       ordering=$3
       snapshot_list $proj $ordering
     ;;
-    create)
+    create|create_instance)
       #image_id can also be a snapshot_id
       image_id=$3
-      hostname=$4
-      sshkey_id=$5
+      sshkey_id=$4
+      hostname=$5
       init_script=$6
 
       echo "image_id $image_id"
@@ -1301,6 +1542,32 @@ function main()
   esac
 }
 
+# parse JSON input or fail with input if not JSON
+function jq_or_fail()
+{
+  # catch stdin
+  local input
+  IFS='' read -d '' -r input
+  fail_if_empty input
+  # don't run command on local statement exit code will be always 0
+  local o r
+  o=$(jq "$@" <<< "$input" 2> /dev/null)
+  r=$?
+  # exit code 4 == parse error: Invalid numeric literal at line 1, column 4
+  if [[ $r -eq 4 ]] ; then
+    error "jq parse error: '$input'"
+  else
+    if [[ -n $o ]] ; then
+      echo "$o"
+    else
+      local tmp=$(mktemp)
+      error "jq exit: $r, but no output, saved in '$tmp'"
+      echo "echo '$input' | jq $@" > $tmp
+      r=1
+    fi
+  fi
+  return $r
+}
 
 ################################################################## exec code
 if [[ $sourced -eq 0 ]]

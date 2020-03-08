@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
+#
+# Usage: saved/mailman_set_dns_records.sh MACHINE_NAME MYHOSTNAME IP
 
 set -euo pipefail
-
-MYDOMAIN=opensource-expert.com
 
 machine_name=$1
 myhostname=$2
 ip=$3
 
-echo "set DNS A record: $myhostname $ip"
-set_ip_domain $ip $myhostname
+fail_if_empty machine_name myhostname ip
 
-# update DNS MX recorde (must exists first)
-domain=$MYDOMAIN
-mx_record="mailman.$domain"
-record=$(get_domain_record_id $mx_record MX)
-mx_target="10 ${machine_name}."
+echo "set forward DNS A record: $myhostname $ip"
+set_forward_dns $ip $myhostname
+
 echo "set DNS A record: $machine_name $ip"
 set_ip_domain $ip $machine_name
-echo "updating MX: $mx_record => $mx_target"
-ovh_cli --format json domain zone $domain record $record put --target "$mx_target" --ttl $DNS_TTL
+
+echo "update DNS MX record "
+domain=$(get_domain "$myhostname")
+mx_target="10 ${machine_name}."
+
+echo "updating MX: $myhostname => $mx_target"
+set_dns_record --no-flush $myhostname MX "$mx_target"
 
 # check MX record
 subdomain=mailman
@@ -34,5 +36,9 @@ if [[ $nb_record -gt 1 ]] ; then
 END
 fi
 
-# flush DNS changes
-ovh_cli domain zone $domain refresh post
+spf="v=spf1 mx:$myhostname -all"
+echo "update SPF record: '$spf"
+
+set_dns_record --no-flush $myhostname SPF "$spf"
+
+dns_flush $domain
