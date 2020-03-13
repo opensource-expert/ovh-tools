@@ -39,4 +39,6 @@ then
   # empty my ssh/known_hosts
   ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $myhostname
   ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R $ip
+  # with final dot (copy paste from DNS or something)
+  ssh-keygen -f "/home/sylvain/.ssh/known_hosts" -R "${hostname}."
 fi

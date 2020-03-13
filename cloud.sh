@@ -958,8 +958,20 @@ snapshot_create()
   local p=$1
   local i=$2
   local snap_name="$3"
-  ovh_cli cloud project $p instance $i snapshot create \
-    --snapshotName "$snap_name"
+
+  # samedi 14 mars 2020, 00:24:53 (UTC+0100)
+  # bugged
+ # ovh_cli cloud project $p instance $i snapshot create \
+ #   --snapshotName "$snap_name"
+
+  ovhapi POST "/cloud/project/$p/instance/$i/snapshot" << END
+{
+  "snapshotName": "$snap_name"
+}
+END
+
+  ret=$?
+  return $ret
 }
 
 id_is_project()
