@@ -122,6 +122,7 @@ SLEEP_DELAY=2
 TMP_DIR=/dev/shm
 
 LOGFILE=./my.log
+export LOGFILE
 
 # OVH DEFAULTS
 REGION=WAW1
@@ -139,6 +140,24 @@ ovh_cli()
   ./ovh-eu "$@"
   local r=$?
   cd - > /dev/null
+  log "$@ ==> $r"
+  return $r
+}
+
+# mercredi 11 mars 2020, 06:26:04 (UTC+0100)
+# alternative to ovh_cli
+ovhapi()
+{
+  # load once ovh auth param
+  local ovh_auth=${AK:-}
+  if [[ -z $ovh_auth ]]; then
+    source ../ovhapi/bash/auth.sh
+    if [[ -z $AK ]]; then
+      fail "loading ovhapi auth.sh failed"
+    fi
+  fi
+  ../ovhapi/bash/ovhapi "$@"
+  local r=$?
   log "$@ ==> $r"
   return $r
 }
@@ -467,6 +486,8 @@ create_instance()
 
   local myflavor=$FLAVOR_NAME
 
+  debug "create_instance $p \"$image_id\" \"$sshkey\"  \"$hostname\" \"$init_script\""
+
   if [[ -z "$myflavor" ]]
   then
     # you can define it in cloud.conf
@@ -479,23 +500,42 @@ create_instance()
     fail "'$myflavor' not found flavor_id on region $REGION"
   fi
 
+  local create_json ret
   if [[ -n "$init_script" && -e "$init_script" ]]
   then
     # with an init_shostname
-    local tmp_init=$(preprocess_init "$init_script")
+    local tmp_init=$(preprocess_init --json "$init_script")
 
-    # we merge the init_script in the outputed json so it becomes parsable
-    ovh_cli --format json cloud project $p instance create \
-      --flavorId $flavor_id \
-      --imageId $image_id \
-      --monthlyBilling false \
-      --name "$hostname" \
-      --region $REGION \
-      --sshKeyId $sshkey \
-      --userData "$(cat $tmp_init)" \
+    create_json="$(cat << END
+{
+  "flavorId": "$flavor_id",
+  "imageId": "$image_id",
+  "monthlyBilling": false,
+  "name": "$hostname",
+  "region": "$REGION",
+  "sshKeyId": "$sshkey",
+  "userData": "$(cat $tmp_init)"
+}
+END
+)"
+
+    #ovh_cli --format json cloud project $p instance create \
+    #  --flavorId $flavor_id \
+    #  --imageId $image_id \
+    #  --monthlyBilling false \
+    #  --name "$hostname" \
+    #  --region $REGION \
+    #  --sshKeyId $sshkey \
+    #  --userData "$(cat $tmp_init)" \
+
+    ## we merge the init_script in the outputed json so it becomes parsable
+    ovhapi POST "/cloud/project/$p/instance" <<< "$create_json" \
         | jq_or_fail ". + {\"init_script\" : \"$tmp_init\"}"
+    ret=$?
 
-    rm $tmp_init
+    if [[ $ret -eq 0 ]] ; then
+      rm $tmp_init
+    fi
   else
     # without init_script
     ovh_cli --format json cloud project $p instance create \
@@ -505,19 +545,30 @@ create_instance()
       --name "$hostname" \
       --region $REGION \
       --sshKeyId $sshkey
+    ret=$?
   fi
+
+  return $ret
 }
 
 # load a init_script and merge some content
 preprocess_init()
 {
+  local json=0
   local init_script="$1"
+
+  if [[ $1 == '--json' ]] ; then
+    json=1
+    init_script="$2"
+  fi
 
   # extract APPEND_SCRIPTS value
   local append_scripts=$(sed -n -e '/^APPEND_SCRIPTS="/,/^"$/ p' $init_script)
 
   # copy to shared memory
-  local tmp_init="/dev/shm/tmp_init.$$"
+  local tmp_dir="$(mktemp -d /dev/shm/tmp_init.XXXXX)"
+  local tmp_init="$tmp_dir/$(basename $init_script)"
+  local init_json="${tmp_init}.json"
   cp $init_script $tmp_init
 
   # compose with included files
@@ -528,7 +579,18 @@ preprocess_init()
     cat $s >> $tmp_init
   done
 
-  echo $tmp_init
+  if [[ $json -eq 1 ]] ; then
+    # escape quote for JSON
+    perl $SCRIPTDIR/utf8_to_h4.pl $init_script > $init_json
+
+    if [[ $DEBUG -eq 1 ]] ; then
+      cat <( echo -n '{ "v" :"') $init_json <(echo '"}') > $init_json.2.json
+    fi
+
+    echo $init_json
+  else
+    echo $tmp_init
+  fi
 }
 
 instance_list()

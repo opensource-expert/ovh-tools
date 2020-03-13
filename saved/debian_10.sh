@@ -19,7 +19,12 @@ myinit_script=$SCRIPTDIR/init/init_root_login_OK.sh
 
 instance=$(create_instance $PROJECT_ID $myimage "$mysshkey" \
   "$myhostname" "$myinit_script" \
-  | jq -r '.id')
+  | jq_or_fail -r '.id')
+
+if [[ ! $instance =~ ^[0-9a-f-]+$ ]] ; then
+  fail "instance_id invalid: '$instance'"
+fi
+
 if wait_for_instance $PROJECT_ID "$instance" 210 ; then
   get_instance_status $PROJECT_ID $instance FULL > $mytmp
   ip=$(get_ip_from_json < $mytmp)
