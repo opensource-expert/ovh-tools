@@ -14,7 +14,7 @@
 #
 # Usage:
 #  ./cloud.sh [show_projects]
-#  ./cloud.sh help
+#  ./cloud.sh -h | help
 #  ./cloud.sh snap_list|get_snap|snapshot_list [-o]
 #  ./cloud.sh image_list [OS_TYPE] [OUTPUT_FORMAT]
 #  ./cloud.sh create IMAGE_ID SSHKEY_ID HOSTNAME [INIT_SCRIPT]
@@ -61,7 +61,7 @@
 # Arguments:
 #   INSTANCE_ID      An openstack instance_id (returned by list)
 
-# The line above, must be kept empty for extract_usage()
+# The empty line above, must be kept empty for extract_usage()
 #
 # See: test/all.sh for many examples
 
@@ -88,7 +88,8 @@ function list_callable_functions()
   grep -E '^([a-z_]+\(\))' $ME | sed -e 's/()$//' -e 's/)$//' -e 's/^/   /'
 }
 
-if [[ "$1" == "help" || "$1" == "--help" ]]
+# hook_display_help
+if [[ $# -ge 1 && ( "$1" == "help" || "$1" == "--help" || "$1" == '-h' ) ]]
 then
   extract_usage
   echo
@@ -1646,6 +1647,8 @@ function jq_or_fail()
 ################################################################## exec code
 if [[ $sourced -eq 0 ]]
 then
+  # help is handled at the top See: hook_display_help
+
   loadconf "$CONFFILE"
   if [[ ! -z "$PROJECT_ID" ]]
   then
