@@ -1,0 +1,31 @@
+#!/bin/bash
+#
+# This file is a normal bash file
+# it is loaded by loadconf()
+# CONFFILE can by set to point to another configuration file.
+# unexistant $CONFFILE is ignored
+# all vars can also be set as environment variables.
+
+# this line will be changed by set_project
+PROJECT_ID=your_projecid_will_go_here
+
+# some bash variables
+# sandbox 8G 2CPU
+FLAVOR_sandbox8=s1-8
+# sandbox 2G 1CPU
+FLAVOR_sandbox2=s1-2
+
+# FLAVOR_NAME is used by cloud.sh
+FLAVOR_NAME=$FLAVOR_sandbox2
+
+# pointer to an external file, listing DNS name, that cloud.sh will refuse to delete
+# to avoid human error.
+PROTECTED_RECORD_LIST=dns_protected_record.list
+
+# automate create or restore
+DEFAULT_SSH_KEY_NAME=your_ssh_key_name_in_the_project
+# when you use snapshot_restore_instance
+DEFAULT_RESTORE_SCRIPT=$SCRIPTDIR/init/init_root_login_OK.sh
+
+# set default region for creating VM
+REGION=GRA7
