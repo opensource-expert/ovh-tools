@@ -267,3 +267,21 @@ _assert_json_valid() {
   echo "create_some_instance $output"
   [[ $status -ne 0 ]]
 }
+
+@test "set_project (slow ~ 16s)" {
+  _load_if_OK
+  # invalid
+  run set_project 123455
+  [[ $status -ne 0 ]]
+
+  some_project=$(show_projects | awk '{print $1; exit}')
+  ret=$?
+  [[ $ret -eq 0 ]]
+  echo "project_id: $some_project"
+  [[ $some_project =~ $hex_regexp ]]
+  # check we are using a local test of cloud.conf
+  [[ -n $CONFFILE ]]
+  [[ -n $SCRIPTDIR ]]
+  [[ $CONFFILE != $SCRIPTDIR/cloud.conf ]]
+  run set_project $some_project
+}

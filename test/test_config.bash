@@ -18,3 +18,5 @@ TEST_FLAVOR_NAME=s1-2
 # Our code has a limitation on parameter transmission and space must be
 # matched by a . regexp pattern.
 DISTRIB_IMAGE='Debian.10$'
+
+CONFFILE=./mytest_cloud.conf

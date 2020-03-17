@@ -996,6 +996,7 @@ dns_flush()
   ovh_cli domain zone $domain status
 }
 
+# Call: delete_instance PROJECT_ID INSTANCE_ID
 delete_instance()
 {
   local p=$1
@@ -1612,6 +1613,11 @@ function main()
       done <<< "$(instance_list $proj)"
       ;;
     set_project)
+      if [[ $# -gt 2 ]] ; then
+        # fix main call with automatic pass the current $PROJECT_ID
+        proj=$3
+      fi
+
       if set_project $proj
       then
         echo "project '$proj' written in '$CONFFILE'"
