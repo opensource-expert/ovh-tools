@@ -15,7 +15,17 @@ English speaker: ask for translation by creating an issue.
 
 Tout le code de ce repository est distristribué sous [GPL v3](LICENSE)
 
-## Statut : PoC prototye qui fonctionne
+## Statut : PoC prototype
+
+Ce code est une "Proof of Concept" un prototype qui sert à démonter l'usage de l'API via bash et nécessite un wrapper
+sur l'API.
+
+
+EDIT: mardi 17 mars 2020, 07:37:52 (UTC+0100)
+
+Actuellement, le code est en transition et la procédure d'installation n'est pas revalidée.
+
+## Description des fichiers du projet
 
 Il y a plusieurs scripts. Le code principale est `cloud.sh`.
 
@@ -28,6 +38,8 @@ programmation bash, JSON, python sont fortement recommandées pour utiliser ces
 outils.
 
 ## Installation
+
+EDIT: mardi 17 mars 2020, 07:37:52 (UTC+0100) **Non re-testé**
 
 Nous montrons une installation sous une VM public-cloud. (testé avec Debian 9 Stretch et Ubuntu 18.04)
 
@@ -230,7 +242,7 @@ Le `PROJECT_ID` sera passé pour les commandes suivantes :
 ./cloud.sh set_project 3554d1c5d638452f94854da78af239c2
 ```
 
-### Lister les image disponbles
+### Lister les images disponbles
 
 Ça ne liste que les images Linux :
 
@@ -263,7 +275,7 @@ de passer à `old stable` début juillet 2019.
 
 ```
 # adjust with the outputed value of course it may change
-image_id=a794936f-29d7-4d7b-a1a1-f48df6f8a462
+image_id=96fa7656-10d6-4de3-a4a3-b756671f7593
 ```
 
 La clé ssh (les clés sont par projet, même si c'est ma même clé) :
@@ -284,13 +296,17 @@ hostname=ovh-tools.opensource-expert.com
 On a tout, on crée l'instance :
 
 ```
-./cloud.sh create $image_id $hostname $sshkey_id
+./cloud.sh create $image_id $sshkey_id $hostname
 ```
+
+Il faut attendre que l'instance se crée.
 
 ### Attendre de l'instance soit prête
 
 La commande avec les valeur du `PROJECT_ID` de l'`instance_id` sont affichées
 par `create`:
+
+On peut retrouver ces valeurs avec les commandes suivantes :
 
 ```
 # list instance_id to get you instance_id
@@ -324,13 +340,13 @@ new_name=changeme.opensource-expert.com
 
 ### afficher le status d'une instance
 
-une ligne en mode texte :
+Affiche une seul ligne en mode texte :
 
 ```
 ./cloud.sh status $instance_id
 ```
 
-Les informations affiché sont :
+Les informations affichées sont :
 
 ```
 bdb4a905-e2e8-483f-b135-dac609b3d49b   ==> instance_id
@@ -338,7 +354,7 @@ bdb4a905-e2e8-483f-b135-dac609b3d49b   ==> instance_id
 changeme.opensource-expert.com         ==> le nom de l'instance
 ACTIVE                                 ==> son status
 WAW1                                   ==> la région OVH où elle tourne
-s1-2                                   ==> le type de machine FLAVOR
+s1-2.consumption                       ==> le type de machine FLAVOR
 debian                                 ==> le user de connexion
 ```
 
@@ -401,14 +417,14 @@ sshkey_id=$(./cloud.sh ssh_list | awk '$2 == "sylvain2016" { print $1 }')
 hostname=phoenix.opensource-expert.com
 
 # one of the snapshot_name available on my project
-snapshot_name=Debian10
+snapshot_name=snapshot.opensource-expert.com
 snapshot_id=$(./cloud.sh snap_list | awk "\$2 == \"$snapshot_name\" { print \$1}")
 ```
 
-La suite est identique, sauf que c'est un `snapshot_id` et pas une `image_id`
+La suite est identique au `create`, sauf que c'est un `snapshot_id` et pas une `image_id`
 
 ```
-./cloud.sh create $snapshot_id $hostname $sshkey_id
+./cloud.sh create $snapshot_id $sshkey_id $hostname
 ```
 
 ## Appel direct à l'API
@@ -440,6 +456,26 @@ Remplacer les espaces par des . dans les pattern pour grep, car `call` fait un
 `eval` qui mange les espaces.
 
 ```
-./cloud.sh call find_image \$PROJECT_ID Debian.9$
+./cloud.sh call find_image \$PROJECT_ID 'Debian.9$'
 ```
 
+## saved
+
+Encore un peu plus de hacking. Ce PoC permet d'étendre les fonctionnalité de `cloud.sh` en enregistrant des commandes
+dans un `.sh` et en les faisantnt jouer par cloud.sh dans le même environnement de code que cloud.sh lui même.
+
+```
+./cloud.sh run saved/debian_10.sh "new-vm.opensource-exper.com"
+```
+
+Quand vous avez une suite de commande qui fonctionne, mettez les dans un `saved/script.sh` et lancer ça automatiquement.
+
+## encore plus
+
+Oui il y en a encore, mais je vais devoir framenter cette doc qui devient trop longue.
+
+Il ne reste plus qu'à :
+
+```
+vim cloud.sh
+```
