@@ -10,11 +10,11 @@ set -euo pipefail
 # empty if you run it as root
 SUDO=""
 
-# un comment to run as user
-SUDO=sudo
+# uncomment to run as user
+#SUDO=sudo
 
 $SUDO apt update
-$SUDO apt install -y git
+$SUDO apt install -y git curl
 git clone https://github.com/opensource-expert/ovh-tools.git
 # install jq 1.6, not yet available in package repository
 JQ_URL=https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
