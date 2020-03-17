@@ -1,3 +1,11 @@
 *.swp
+# local file, should not be commited
 ovh.conf
 cloud.conf
+dns_protected_record.list
+# local debug
+my.log
+# non git file
+draft
+# private saved config with sensible data
+mysaved

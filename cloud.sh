@@ -130,6 +130,7 @@ REGION=WAW1
 DNS_TTL=60
 DEFAULT_FLAVOR=s1-2
 
+
 ###################################### functions
 
 # ovh-cli seems to require json def of all api in its own folder,
@@ -145,19 +146,70 @@ ovh_cli()
   return $r
 }
 
+# read data from inifile ovh.conf format for ovh api
+get_ovh_conf() {
+  awk -F '='  "/^$1=/ { print \$2}" $(dirname $BASH_SOURCE)/ovh.conf
+}
+
+# Call: ovhapi_init
+# Transitionnal define globals from ovhapi
+ovhapi_init() {
+  #Application Key
+  AK=$(get_ovh_conf application_key)
+  #Application Secret
+  AS=$(get_ovh_conf application_secret)
+  CK="$(get_ovh_conf consumer_key)"
+  CURL=$(which curl)
+  [ -x $CURL ] || error 1 "Missing curl binary"
+  API_OVH="https://api.ovh.com/1.0"
+}
+
 # mercredi 11 mars 2020, 06:26:04 (UTC+0100)
 # alternative to ovh_cli
+# Call: ovhapi (GET | POST | DELETE | PUT) URL
+# JSON DATA read from STDIN
 ovhapi()
 {
+  local METHOD=${1:-}
+  local QUERY=${2:-}
+  fail_if_empty METHOD QUERY
+
   # load once ovh auth param
   local ovh_auth=${AK:-}
   if [[ -z $ovh_auth ]]; then
-    source ../ovhapi/bash/auth.sh
-    if [[ -z $AK ]]; then
-      fail "loading ovhapi auth.sh failed"
-    fi
+    ovhapi_init
+    fail_if_empty AK AS CK CURL
   fi
-  ../ovhapi/bash/ovhapi "$@"
+
+  local BODY=""
+  # Take body from stdin
+  if [ -t 0 ] ; then
+    log "ovhapi: no BODY"
+  else
+    BODY=$(cat)
+    log "ovhapi: BODY: $BODY"
+  fi
+
+  # Time delta
+  local DELTA=$(($(date +%s) - $($CURL -s $API_OVH/auth/time)))
+
+  local QUERY="$API_OVH$QUERY"
+  local TSTAMP=$(($(date +%s) + $DELTA))
+
+  # https://docs.ovh.com/gb/en/customer/first-steps-with-ovh-api/
+  # "$1$" + SHA1_HEX(AS+"+"+CK+"+"+METHOD+"+"+QUERY+"+"+BODY+"+"+TSTAMP)
+  local PRE=$AS"+"$CK"+"$METHOD"+"$QUERY"+"$BODY"+"$TSTAMP
+  local SIGNATURE='$1$'$(echo -n "$PRE" | openssl dgst -sha1 -hex | cut -f 2 -d ' ' )
+
+  $CURL -s \
+    -X$METHOD                           \
+    -H "Content-type: application/json" \
+    -H "X-Ovh-Application:$AK"          \
+    -H "X-Ovh-Timestamp:$TSTAMP"        \
+    -H "X-Ovh-Signature:$SIGNATURE"     \
+    -H "X-Ovh-Consumer:$CK"             \
+    --data-ascii "$BODY"                \
+    $QUERY
   local r=$?
   log "$@ ==> $r"
   return $r
@@ -472,9 +524,20 @@ get_flavor()
   fi
 }
 
-# create_instance PROJECT_ID IMAGE_ID SSHKEY_ID HOSTNAME INIT_SCRIPT
+# Call: json_append_key KEY_NAME "VALUE"
+json_append_key()
+{
+  local key=$1
+  # escape backslashes \ and then escape / for sed itself
+  local value=$(sed -e 's/\\/\\\\/g' -e 's/\//\\\//g' <<< "$2")
+  sed -e "s/\"$/\",\n  \"$key\" : \"$value\"/"
+}
+
+# Call: create_instance PROJECT_ID IMAGE_ID SSHKEY_ID HOSTNAME INIT_SCRIPT
 # you can change flavor by defining FLAVOR_NAME global variable.
 # outputs json
+# INIT_SCRIPT is preprocessed on the instance it is found here:
+#  /var/lib/cloud/instance/scripts/part-001
 create_instance()
 {
   local p=$1
@@ -501,58 +564,52 @@ create_instance()
     fail "'$myflavor' not found flavor_id on region $REGION"
   fi
 
-  local create_json ret
-  if [[ -n "$init_script" && -e "$init_script" ]]
-  then
-    # with an init_shostname
-    local tmp_init=$(preprocess_init --json "$init_script")
-
-    create_json="$(cat << END
-{
-  "flavorId": "$flavor_id",
-  "imageId": "$image_id",
-  "monthlyBilling": false,
-  "name": "$hostname",
-  "region": "$REGION",
-  "sshKeyId": "$sshkey",
-  "userData": "$(cat $tmp_init)"
-}
+  local create_json ret tmp_init
+  tmp_init=""
+  create_json="$(cat << END
+    {
+      "flavorId": "$flavor_id",
+      "imageId": "$image_id",
+      "monthlyBilling": false,
+      "name": "$hostname",
+      "region": "$REGION",
+      "sshKeyId": "$sshkey"
+    }
 END
 )"
 
-    #ovh_cli --format json cloud project $p instance create \
-    #  --flavorId $flavor_id \
-    #  --imageId $image_id \
-    #  --monthlyBilling false \
-    #  --name "$hostname" \
-    #  --region $REGION \
-    #  --sshKeyId $sshkey \
-    #  --userData "$(cat $tmp_init)" \
-
-    ## we merge the init_script in the outputed json so it becomes parsable
-    ovhapi POST "/cloud/project/$p/instance" <<< "$create_json" \
-        | jq_or_fail ". + {\"init_script\" : \"$tmp_init\"}"
-    ret=$?
-
-    if [[ $ret -eq 0 ]] ; then
-      rm $tmp_init
-    fi
-  else
-    # without init_script
-    ovh_cli --format json cloud project $p instance create \
-      --flavorId $flavor_id \
-      --imageId $image_id \
-      --monthlyBilling false \
-      --name "$hostname" \
-      --region $REGION \
-      --sshKeyId $sshkey
-    ret=$?
+  if [[ -n "$init_script" && -e "$init_script" ]]
+  then
+    tmp_init=$(preprocess_init --json "$init_script")
+    create_json=$(json_append_key userData "$tmp_init" <<< "$create_json")
   fi
 
+  ## we merge the init_script in the outputed json so it becomes parsable
+  ovhapi POST "/cloud/project/$p/instance" <<< "$create_json" \
+      | jq_or_fail ". + {\"init_script\" : \"$tmp_init\"}"
+  ret=$?
+
+  if [[ $ret -eq 0 && -e $tmp_init ]] ; then
+    rm $tmp_init
+  fi
   return $ret
 }
 
 # load a init_script and merge some content
+# This helper provide inclusion mechanisme for init_script
+# Call: preprocess_init [--json] FILE_NAME
+#
+# How does it work:
+# Add a variable in your script for appending the content of other bash script:
+#
+#    APPEND_SCRIPTS="
+#    init/init_upgrade.sh
+#    /home/sylvain/code/agu3l/projet-ville-annecy/scripts/post_install
+#    "
+# It is extracted with sed AND MUST be double quoted AND in first column
+# There's no bash variable evaluation in the file list content.
+# File are searched relative to the current $PWD
+#
 preprocess_init()
 {
   local json=0
@@ -582,7 +639,7 @@ preprocess_init()
 
   if [[ $json -eq 1 ]] ; then
     # escape quote for JSON
-    perl $SCRIPTDIR/utf8_to_h4.pl $init_script > $init_json
+    perl $SCRIPTDIR/utf8_to_h4.pl $tmp_init > $init_json
 
     if [[ $DEBUG -eq 1 ]] ; then
       cat <( echo -n '{ "v" :"') $init_json <(echo '"}') > $init_json.2.json
@@ -1360,11 +1417,12 @@ function error()
   >&2 echo "error: $*"
 }
 
+# non maskable output (bats stderr kept on $output)
 function debug()
 {
   if [[ $DEBUG -eq 1 ]] ; then
-    # write on stderr
-    >&2 echo "debug: $*"
+    # write on non standar non stdout non stderr descriptor
+    echo "[tty]debug: $*" > /dev/tty
   fi
 }
 

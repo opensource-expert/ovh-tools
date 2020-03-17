@@ -13,3 +13,8 @@ DOMAIN_NAME=opensource-expert.com
 
 # the kind of VM we could create during test
 TEST_FLAVOR_NAME=s1-2
+
+# A regexp to find the image for the distribution
+# Our code has a limitation on parameter transmission and space must be
+# matched by a . regexp pattern.
+DISTRIB_IMAGE='Debian.10$'
