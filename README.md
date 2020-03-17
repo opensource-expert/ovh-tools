@@ -62,6 +62,8 @@ pip install -r requirements.txt
 
 Installation de [ovh-cli](https://github.com/yadutaf/ovh-cli) en python :
 
+**ATENTION :** ce projet semble mort et sera retiré du code  
+
 ```
 cd ~
 git clone https://github.com/yadutaf/ovh-cli.git
@@ -177,6 +179,13 @@ Invalid ApplicationSecret 'None'
 
 ou des infos avec `status expired`
 
+Peut-être qu'il n'y a pas de crédential dans le dossier `~/ovh-cli`
+On peut utiliser celui généré par `mk_cred.py`
+
+```
+ln -s ../ovh-tools/ovh.conf  .
+```
+
 ## Debug de cloud.sh
 
 Comme mentionné, cet outil est un PoC et demeure expérimental, bien que totalement utilisable.
@@ -199,14 +208,46 @@ cd ~/ovh-tools
 Solution : recommencer l'étape d'initialiation des credential d'API. Ou juste
 un `./mk_cred.py update` si le token est expiré.
 
+### `no project set, or no action`no project set, or no action
+
+Si `./cloud.sh` répète `no project set, or no action` c'est que vous
+n'avez pas fait le `set_project` et qu'il ne sait pas vers quel projet
+diriger vos actions.
+
+Ou qu'il n'y a pas de cloud.conf encore.
+
+```
+cp cloud.conf.example cloud.conf
+```
+Et éditez le fichier.
+
+La command `./cloud.sh` sans argument devrait lister vos projets associés au credential
+
+```
+./cloud.sh
+no project set, or no action
+33333333333333333333333333333333 Super_project
+66666666666666666666666666666666 Mega_cloud
+00000000000000000000000000000000 Pilot-de-formule-1
+35353535353535353535353535353535 public-cloud-sylvain
+cc88cc88cc88c88cc888c888c888c888 production_awsome_client
+```
+
+## configuration dans `cloud.conf`
+
+Regardez le fichier [`cloud.conf.example`](cloud.conf.example)
+
+Le valeurs sont celles d'OVH.
+
+* `DEFAULT_SSH_KEY_NAME`  (le nom pas l'id) `./cloud.sh list_ssh | awk '{print $2}'`
+* `REGION` la région openstack `./cloud.sh call region_list \$PROJECT_ID` 
+* etc.
+
 ## Utilisation des commandes
 
 L'interface de ligne de commande peut changer. Généralement les différentes
 syntaxes d'une même commande sont supportées.
 
-Notez que si `./cloud.sh` répète `no project set, or no action` c'est que vous
-n'avez pas fait le `set_project` et qu'il ne sait pas vers quel projet
-diriger vos actions.
 
 De nombreuses commandes sont listées dans le fichier [usage_examples.sh](usage_examples.sh).
 
@@ -239,7 +280,7 @@ Le `PROJECT_ID` sera passé pour les commandes suivantes :
 
 ```
 # this identifier is one of the listed via show_projects command
-./cloud.sh set_project 3554d1c5d638452f94854da78af239c2
+./cloud.sh set_project 355456781234567889cafe88cafe8888
 ```
 
 ### Lister les images disponbles
