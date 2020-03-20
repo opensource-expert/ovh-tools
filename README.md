@@ -39,41 +39,22 @@ outils.
 
 ## Installation
 
-EDIT: mardi 17 mars 2020, 07:37:52 (UTC+0100) **Non re-testé**
+Nous montrons une installation sous une VM public-cloud.
 
-Nous montrons une installation sous une VM public-cloud. (testé avec Debian 9 Stretch et Ubuntu 18.04)
+* testé Debian 10
+* xubuntu 18.04
 
-On suppose que l'installation se fait à la racine d'une VM en root, on travaile dans `~/` (`/root`).
+On suppose que l'installation est testée dans une VM.
 
-Voir [install.sh](install.sh)
+Voir les commandes dans  [install.sh](install.sh)
 
-```
-apt update
-apt install -y git
-git clone https://github.com/opensource-expert/ovh-tools.git
-# install jq 1.6, not yet available in package repository
-JQ_URL=https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
-wget $JQ_URL -O /usr/local/bin/jq
-chmod a+x /usr/local/bin/jq
-apt install -y python-pip python-dev
-cd ~/ovh-tools
-pip install -r requirements.txt
-```
+### Installation ovh-cli
 
 Installation de [ovh-cli](https://github.com/yadutaf/ovh-cli) en python :
 
-**ATENTION :** ce projet semble mort et sera retiré du code  
+**ATENTION :** ce projet semble mort et sera retiré du code
 
-```
-cd ~
-git clone https://github.com/yadutaf/ovh-cli.git
-cd ovh-cli/
-pip install wheel
-pip install setuptools
-pip install -r requirements.txt
-# downloads json for API
-./ovh-eu
-```
+Voir aussi les commandes dans  [install.sh](install.sh)
 
 ### La structure des dossiers attendue
 
@@ -240,7 +221,7 @@ Regardez le fichier [`cloud.conf.example`](cloud.conf.example)
 Le valeurs sont celles d'OVH.
 
 * `DEFAULT_SSH_KEY_NAME`  (le nom pas l'id) `./cloud.sh list_ssh | awk '{print $2}'`
-* `REGION` la région openstack `./cloud.sh call region_list \$PROJECT_ID` 
+* `REGION` la région openstack `./cloud.sh call region_list \$PROJECT_ID`
 * etc.
 
 ## Utilisation des commandes

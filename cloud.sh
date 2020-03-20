@@ -146,6 +146,12 @@ ovh_cli()
   return $r
 }
 
+myovh_cli() {
+# "ux?--d2f ?ovh_cliimyea GET /=substitute(@u, ' ', '/', 'g')
+  log "myovh_cli $@"
+  ~/code/go/src/github.com/opensource-expert/ovh-cli-go/ovh-cli-go "$@" 2> /dev/null
+}
+
 # read data from inifile ovh.conf format for ovh api
 get_ovh_conf() {
   awk -F '='  "/^$1=/ { print \$2}" $(dirname $BASH_SOURCE)/ovh.conf
@@ -229,7 +235,8 @@ ovh_test_credential()
 
 ovh_test_login()
 {
-  local r=$(ovh_cli --format json auth current-credential)
+  #local r=$(ovh_cli --format json auth current-credential)
+  local r=$(myovh_cli GET /auth/currentCredential)
 
   if ovh_test_credential "$r" ; then
     if [[ "$(jq -r '.status' <<< "$r")" == 'expired' ]] ; then
@@ -267,14 +274,18 @@ function color_output()
 
 show_projects()
 {
-  local clouds=$(ovh_cli --format json cloud project | jq -r .[])
+  #local clouds=$(ovh_cli --format json cloud project | jq -r .[])
+  local clouds=$(myovh_cli GET /cloud/project | jq -r .[])
+  #local clouds=$(ovhapi GET /cloud/project | jq -r .[])
   local r=$?
   local project
   local c
 
   for c in $clouds
   do
-    project=$(ovh_cli --format json cloud project $c | jq -r .description)
+    #project=$(ovh_cli --format json cloud project $c | jq -r .description)
+    project=$(myovh_cli GET /cloud/project/$c | jq -r .description)
+    #project=$(ovhapi GET /cloud/project/$c | jq -r .description)
     echo "$c $project" | color_output "$PROJECT_ID"
   done
   return $r
@@ -285,7 +296,7 @@ order_snapshots()
 {
   local p=$1
   # sort_by in on some advanced jq binary, version jq-1.6, it may fail on debian version
-  ovh_cli --format json cloud project $p snapshot \
+  myovh_cli GET /cloud/project/$p/snapshot  \
     | jq -r '.|sort_by(.creationDate)|reverse|.[]|
       .id+" "+.name+" "+.region'
 }
@@ -319,11 +330,11 @@ snapshot_list()
 
   case $output_type in
     json)
-      ovh_cli --format json cloud project $p snapshot \
+      myovh_cli GET /cloud/project/$p/snapshot  \
         | jq -r "$order_filter"
       ;;
     *)
-      ovh_cli --format json cloud project $p snapshot \
+      myovh_cli GET /cloud/project/$p/snapshot  \
         | jq -r "$order_filter |.[]|
           .id
           +\" \"+.name
@@ -346,7 +357,7 @@ get_snapshot_status()
     return 1
   fi
 
-  ovh_cli --format json cloud project $p snapshot $snapshot_id
+  myovh_cli GET /cloud/project/$p/snapshot/$snapshot_id
   return 0
 }
 
@@ -354,8 +365,8 @@ delete_snapshot()
 {
   local p=$1
   local snap_id=$2
-  ovh_cli --format json cloud project $p snapshot $snap_id delete \
-    | grep -E '(^|status.*)'
+  myovh_cli DELETE /cloud/project/$p/snapshot/$snap_id  \
+    | tee del_snap.json | grep -E '(^|status.*)'
 }
 
 snapshot_make_increment()
@@ -655,7 +666,7 @@ instance_list()
 {
   local p=$1
   # filter on public ip address only
-  ovh_cli --format json cloud project $p instance \
+  myovh_cli GET /cloud/project/$p/instance  \
     | show_json_instance many
 }
 
@@ -664,7 +675,8 @@ rename_instance()
   local p=$1
   local instanceId=$2
   local new_name="$3"
-  ovh_cli --format json cloud project $p instance $2 put \
+
+  ovh_cli --format json cloud project $p instance $instanceId put \
     --instanceName "$new_name"
 }
 
@@ -1036,7 +1048,8 @@ END
 id_is_project()
 {
   # return an array of project_id, -1 if not found
-  local json=$(ovh_cli --format json cloud project)
+  #local json=$(ovh_cli --format json cloud project)
+  local json=$(myovh_cli GET /cloud/project)
   if ovh_test_credential "$json" ; then
     # if credential are wrong this is not a valid JSON
     jq -r '.[]' <<< "$json" | grep -q "^$1\$" && return 0
@@ -1199,7 +1212,7 @@ list_images()
   if [[ $# -ge 2 ]] ; then
     # you can pass an empty value to force output_type for example
     if [[ -n $2 ]] ; then
-      limit_osType="--osType $2"
+      limit_osType="&osType=$2"
     fi
   fi
 
@@ -1207,15 +1220,14 @@ list_images()
     output_type=$3
   fi
 
+  local url="/cloud/project/$p/image?$limit_osType&region=$REGION"
   case $output_type in
     json)
-      ovh_cli --format json cloud project $p image \
-        $limit_osType --region $REGION
+      myovh_cli GET "$url"
       ;;
     *)
       # format ID name
-      ovh_cli --format json cloud project $p image \
-        $limit_osType --region $REGION \
+      myovh_cli GET "$url" \
         | jq -r ".[]|.id+\" \"+.name"
       ;;
   esac
