@@ -75,7 +75,7 @@ else
 fi
 
 
-############################################# functions
+############################################# functions for help
 
 # display help from script header comment
 function extract_usage()
@@ -88,7 +88,7 @@ function list_callable_functions()
   grep -E '^([a-z_]+\(\))' $ME | sed -e 's/()$//' -e 's/)$//' -e 's/^/   /'
 }
 
-# hook_display_help
+############################################# hook_display_help
 if [[ $# -ge 1 && ( "$1" == "help" || "$1" == "--help" || "$1" == '-h' ) ]]
 then
   extract_usage
@@ -100,7 +100,6 @@ fi
 
 ######################################################## configuration
 SCRIPTDIR=$(dirname $ME)
-OVH_CLIDIR=$SCRIPTDIR/../ovh-cli
 DEBUG=1
 DEFAULT_SSH_KEY_NAME=""
 
@@ -114,6 +113,8 @@ fi
 
 # globals can be overridden in $CONFFILE
 # see loadconf()
+# OUR_VARS list all vars that can be exported and preserved by loadconf()
+OUR_VARS="REGION"
 
 # delays in seconds
 MAX_WAIT=210
@@ -126,99 +127,30 @@ LOGFILE=./my.log
 export LOGFILE
 
 # OVH DEFAULTS
-REGION=WAW1
+DEFAULT_REGION=WAW1
 DNS_TTL=60
 DEFAULT_FLAVOR=s1-2
 
 
 ###################################### functions
 
-# ovh-cli seems to require json def of all api in its own folder,
-# we need to change??
-# here we find ovh-cli in fixed nearby location
-ovh_cli()
-{
-  cd $OVH_CLIDIR
-  ./ovh-eu "$@"
-  local r=$?
-  cd - > /dev/null
-  log "$@ ==> $r"
-  return $r
-}
-
 myovh_cli() {
 # "ux?--d2f ?ovh_cliimyea GET /=substitute(@u, ' ', '/', 'g')
-  log "myovh_cli $@"
-  ~/code/go/src/github.com/opensource-expert/ovh-cli-go/ovh-cli-go "$@" 2> /dev/null
+# ^vt "kxi\"\" :F\ikF"ldf-f:wi\"eea\",
+  if [[ -t 0 ]] ; then
+    log "ovh-cli $1 $2 '${3:-}'"
+    ~/.local/bin/ovh-cli "$@" 2> /dev/null
+  else
+    # stdin
+    local stdin=$(cat)
+    log "ovh-cli $1 $2 '$stdin'"
+    echo "$stdin" | ~/.local/bin/ovh-cli "$@" 2> /dev/null
+  fi
 }
 
 # read data from inifile ovh.conf format for ovh api
 get_ovh_conf() {
   awk -F '='  "/^$1=/ { print \$2}" $(dirname $BASH_SOURCE)/ovh.conf
-}
-
-# Call: ovhapi_init
-# Transitionnal define globals from ovhapi
-ovhapi_init() {
-  #Application Key
-  AK=$(get_ovh_conf application_key)
-  #Application Secret
-  AS=$(get_ovh_conf application_secret)
-  CK="$(get_ovh_conf consumer_key)"
-  CURL=$(which curl)
-  [ -x $CURL ] || error 1 "Missing curl binary"
-  API_OVH="https://api.ovh.com/1.0"
-}
-
-# mercredi 11 mars 2020, 06:26:04 (UTC+0100)
-# alternative to ovh_cli
-# Call: ovhapi (GET | POST | DELETE | PUT) URL
-# JSON DATA read from STDIN
-ovhapi()
-{
-  local METHOD=${1:-}
-  local QUERY=${2:-}
-  fail_if_empty METHOD QUERY
-
-  # load once ovh auth param
-  local ovh_auth=${AK:-}
-  if [[ -z $ovh_auth ]]; then
-    ovhapi_init
-    fail_if_empty AK AS CK CURL
-  fi
-
-  local BODY=""
-  # Take body from stdin
-  if [ -t 0 ] ; then
-    log "ovhapi: no BODY"
-  else
-    BODY=$(cat)
-    log "ovhapi: BODY: $BODY"
-  fi
-
-  # Time delta
-  local DELTA=$(($(date +%s) - $($CURL -s $API_OVH/auth/time)))
-
-  local QUERY="$API_OVH$QUERY"
-  local TSTAMP=$(($(date +%s) + $DELTA))
-
-  # https://docs.ovh.com/gb/en/customer/first-steps-with-ovh-api/
-  # "$1$" + SHA1_HEX(AS+"+"+CK+"+"+METHOD+"+"+QUERY+"+"+BODY+"+"+TSTAMP)
-  local PRE=$AS"+"$CK"+"$METHOD"+"$QUERY"+"$BODY"+"$TSTAMP
-  local SIGNATURE='$1$'$(echo -n "$PRE" | openssl dgst -sha1 -hex | cut -f 2 -d ' ' )
-
-  $CURL -s \
-    -X$METHOD                           \
-    -H "Content-type: application/json" \
-    -H "X-Ovh-Application:$AK"          \
-    -H "X-Ovh-Timestamp:$TSTAMP"        \
-    -H "X-Ovh-Signature:$SIGNATURE"     \
-    -H "X-Ovh-Consumer:$CK"             \
-    --data-ascii "$BODY"                \
-    $QUERY
-  local r=$?
-  log "$@ ==> $r"
-  return $r
 }
 
 ovh_test_credential()
@@ -235,7 +167,6 @@ ovh_test_credential()
 
 ovh_test_login()
 {
-  #local r=$(ovh_cli --format json auth current-credential)
   local r=$(myovh_cli GET /auth/currentCredential)
 
   if ovh_test_credential "$r" ; then
@@ -258,7 +189,7 @@ function log()
 }
 
 
-# function Usage: color_output "grep_pattern"
+# Call: color_output "grep_pattern"
 # dont filter output, only colorize the grep_pattern
 function color_output()
 {
@@ -274,18 +205,14 @@ function color_output()
 
 show_projects()
 {
-  #local clouds=$(ovh_cli --format json cloud project | jq -r .[])
   local clouds=$(myovh_cli GET /cloud/project | jq -r .[])
-  #local clouds=$(ovhapi GET /cloud/project | jq -r .[])
   local r=$?
   local project
   local c
 
   for c in $clouds
   do
-    #project=$(ovh_cli --format json cloud project $c | jq -r .description)
     project=$(myovh_cli GET /cloud/project/$c | jq -r .description)
-    #project=$(ovhapi GET /cloud/project/$c | jq -r .description)
     echo "$c $project" | color_output "$PROJECT_ID"
   done
   return $r
@@ -309,8 +236,7 @@ last_snapshot()
   order_snapshots $1 | grep "$2" | head -1 | awk '{print $1}'
 }
 
-# function Usage:
-#   snapshot_list $project_id [-o] [output_type]
+# Call: snapshot_list $project_id [-o] [output_type]
 #   $order if present force list to be order by creationDate decreasing
 #   sorting require jq 1.6
 snapshot_list()
@@ -375,7 +301,7 @@ snapshot_make_increment()
   local instance_id=$2
 
   # read instance information
-  local instance_json=$(ovh_cli --format json cloud project $p instance $instance_id)
+  local instance_json=$(myovh_cli GET /cloud/project/$p/instance/$instance_id)
 
   # read json data
   local image_visibility=$(jq -r .image.visibility <<< "$instance_json")
@@ -402,7 +328,7 @@ snapshot_make_increment()
 
   echo "snapshot_create $p $instance_id \"$new_snap_name\""
   snapshot_create $p $instance_id "$new_snap_name"
-  local new_snapshot_json=$(ovh_cli --format json cloud project $p snapshot |
+  local new_snapshot_json=$(myovh_cli GET /cloud/project/$p/snapshot |
       jq -r ".[]|select(.name == \"$new_snap_name\")")
   jq . <<< "$new_snapshot_json"
   local wait_timeout=240
@@ -415,7 +341,7 @@ snapshot_make_increment()
   fi
 }
 
-# Usage: snapshot_restore_instance $project_id snap_pattern [FLAVOR_NAME] [<force_hostname>]
+# Call: snapshot_restore_instance $project_id snap_pattern [FLAVOR_NAME] [<force_hostname>]
 snapshot_restore_instance()
 {
   set -euo pipefail
@@ -525,17 +451,18 @@ get_flavor()
 
   if [[ -z "$flavor_name" ]]
   then
-    ovh_cli --format json cloud project $p flavor \
+    myovh_cli GET /cloud/project/$p/flavor \
       | jq_or_fail -r '.[]|select(.osType != "windows")
           .id+" "+.name+" "+(.vcpus|tostring)+" CPU "+(.ram|tostring)+" Mo "+.region'
   else
     # must return a single flavor for a region
-    ovh_cli --format json cloud project $p flavor \
+    myovh_cli GET /cloud/project/$p/flavor  \
       | jq_or_fail -r ".[]|select(.name == \"$flavor_name\" and .region == \"$region\").id"
   fi
 }
 
 # Call: json_append_key KEY_NAME "VALUE"
+# append a JSON key value to stdin, JSON formated by line
 json_append_key()
 {
   local key=$1
@@ -592,11 +519,11 @@ END
   if [[ -n "$init_script" && -e "$init_script" ]]
   then
     tmp_init=$(preprocess_init --json "$init_script")
-    create_json=$(json_append_key userData "$tmp_init" <<< "$create_json")
+    create_json=$(json_append_key userData "$(cat $tmp_init)" <<< "$create_json")
   fi
 
   ## we merge the init_script in the outputed json so it becomes parsable
-  ovhapi POST "/cloud/project/$p/instance" <<< "$create_json" \
+  myovh_cli POST "/cloud/project/$p/instance" <<< "$create_json" \
       | jq_or_fail ". + {\"init_script\" : \"$tmp_init\"}"
   ret=$?
 
@@ -676,8 +603,7 @@ rename_instance()
   local instanceId=$2
   local new_name="$3"
 
-  ovh_cli --format json cloud project $p instance $instanceId put \
-    --instanceName "$new_name"
+  myovh_cli PUT /cloud/project/$p/instance/$instanceId "{\"instanceName\" : \"$new_name\"}"
 }
 
 # more versatile version of instance_list
@@ -691,27 +617,27 @@ get_instance_status()
   then
     if [[ "$i" == "ALL" ]]
     then
-      ovh_cli --format json cloud project $p instance
+      myovh_cli GET /cloud/project/$p/instance
     else
-      ovh_cli --format json cloud project $p instance $i
+      myovh_cli GET /cloud/project/$p/instance/$i
     fi
   elif [[ -z "$i" ]]
   then
     # list all in text format
     # See Also: instance_list
     # ipAddresses select IPv4 public only IP
-    ovh_cli --format json  cloud project $p instance \
+    myovh_cli GET /cloud/project/$p/instance   \
       | show_json_instance many
   else
     # one instance list summary in text
-    ovh_cli --format json  cloud project $p instance $i \
+    myovh_cli GET /cloud/project/$p/instance/$i   \
       | show_json_instance
   fi
 }
 
 # DRY: format json output
 # this filter JSON ouput for bash with some fields
-# function Usage:
+# Call:
 #   json_input | show_json_instance many  => fister output for a list
 #   json_input | show_json_instance       => fister output for a single instance
 #
@@ -762,7 +688,7 @@ show_json_instance()
 }
 
 # DRY func
-# function Usage: get_ip_from_json < $tmp_json_input
+# Call: get_ip_from_json < $tmp_json_input
 get_ip_from_json()
 {
   show_json_instance | awk '{print $2}'
@@ -772,7 +698,7 @@ get_ip_from_json()
 list_sshkeys()
 {
   local p=$1
-  ovh_cli --format json cloud project $p sshkey
+  myovh_cli GET /cloud/project/$p/sshkey
 }
 
 # output text
@@ -792,16 +718,16 @@ get_sshkeys()
 
 list_manageable_domains()
 {
-  ovh_cli --format json domain | jq -r '.[]'
+  myovh_cli GET /domain  | jq -r '.[]'
 }
 
 get_domain_zone()
 {
   # get the full zone in txt format
-  ovh_cli --format json domain zone $1 export | jq -r
+  myovh_cli GET /domain/zone/$1/export  | jq -r
 }
 
-# get_domain_record_id $fqdn [$fieldType]
+# Call: get_domain_record_id $fqdn [$fieldType]
 get_domain_record_id()
 {
   # remove trailing dot if any
@@ -811,10 +737,8 @@ get_domain_record_id()
   # search for fieldType A as default
   local fieldType=${2:-A}
 
-  ovh_cli --format json domain zone $domain record \
-    --subDomain $subdomain \
-    --fieldType $fieldType \
-    | jq -r '.[0]'
+  local url="/domain/zone/$domain/record?subDomain=$subdomain&fieldType=$fieldType"
+  myovh_cli GET "$url" | jq -r '.[0]'
 }
 
 get_domain_all_records()
@@ -827,17 +751,24 @@ get_domain_all_records()
     return 1
   fi
 
-  local record_ids=$(ovh_cli --format json domain zone $domain record | jq -r '.[]')
+  local record_ids=$(myovh_cli GET /domain/zone/$domain/record  | jq -r '.[]')
   local r
   for r in $record_ids
   do
-    echo "$r $(ovh_cli --format json domain zone $domain record $r | \
+    echo "$r $(myovh_cli GET /domain/zone/$domain/record/$r  | \
       jq -r '.subDomain
           +" "+(.ttl|tostring)
           +" IN "+.fieldType
           +" "+.target'
       )"
   done
+}
+
+set_ip_reverse()
+{
+  local ip=$1
+  local fqdn=$2
+  myovh_cli POST /ip/$ip/reverse "{\"ipReverse\" : \"$ip\", \"reverse\" : \"${fqdn#.}.\"}"
 }
 
 # set forward and reverse DNS via API
@@ -856,13 +787,10 @@ set_ip_domain()
   # wait a bit
   sleep 1
 
-  # reverse, doesn't work in ovh_cli
-  #ovh_cli ip $ip reverse --ipReverse $ip --reverse ${fqdn#.}.
-  # python wrapper
-  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}.
+  set_ip_reverse $ip $fqdn
 
   echo "  if needed: re-set reverse DNS with:"
-  echo "  $SCRIPTDIR/ovh_reverse.py $ip ${fqdn#.}. "
+  echo "  ./cloud.sh call set_ip_reverse $ip $fqdn"
 
   return $ret
 }
@@ -892,18 +820,26 @@ set_forward_dns()
   local record=$(get_domain_record_id $fqdn)
 
   local ret
+  # TODO: merge code with set_dns_record() ?
   if [[ -z "$record" || "$record" == null ]]
   then
     # must be created
-    ovh_cli --format json domain zone $domain record create \
-      --target $ip --ttl $DNS_TTL --subDomain $subdomain --fieldType A
+    myovh_cli POST /domain/zone/$domain/record  \
+      "{
+      \"target\" : \"$ip\",
+      \"ttl\" : \"$DNS_TTL\",
+      \"subDomain\" : \"$subdomain\",
+      \"fieldType\" : \"A\"
+      }"
     ret=$?
   else
     if ! check_is_protected_record $fqdn ; then
-      # update existing recors
-      ovh_cli --format json domain zone $domain record $record put \
-        --target $ip \
-        --ttl $DNS_TTL
+      # update existing record
+      myovh_cli PUT /domain/zone/$domain/record/$record \
+        "{
+        \"target\" : \"$ip\",
+        \"ttl\" : \"$DNS_TTL\"
+        }"
       ret=$?
     else
       echo "record protected '$fqdn'"
@@ -920,7 +856,8 @@ set_forward_dns()
 }
 
 # update or set a free DNS record
-# set_dns_record [--no-flush] $fqdn $record_type "$record_value"
+# Call: set_dns_record [--no-flush] $fqdn $record_type "$record_value"
+# no check_is_protected_record() is performed
 set_dns_record()
 {
   local flush=1
@@ -941,14 +878,21 @@ set_dns_record()
   if [[ -z "$record" || "$record" == null ]]
   then
     # must be created
-    ovh_cli --format json domain zone $domain record create \
-      --target "$record_value" --ttl $DNS_TTL --subDomain $subdomain --fieldType $record_type
+    myovh_cli POST /domain/zone/$domain/record  \
+      "{
+      \"target\" : \""$record_value\","
+      \"ttl\" : \"$DNS_TTL\",
+      \"subDomain\" : \"$subdomain\",
+      \"fieldType\" : \"$record_type\"
+      }"
     ret=$?
   else
     # update existing recors
-    ovh_cli --format json domain zone $domain record $record put \
-      --target "$record_value" \
-      --ttl $DNS_TTL
+    myovh_cli PUT /domain/zone/$domain/record/$record  \
+      "{
+      \"target\" : \"$record_value\",
+      \"ttl\" : \"$DNS_TTL\"
+      }"
     ret=$?
   fi
 
@@ -991,10 +935,11 @@ delete_dns_record()
   then
     error "record '$fqdn' '$fieldType' not found"
   else
-    ovh_cli domain zone $domain record $record delete
+    myovh_cli DELETE /domain/zone/$domain/record/$record
     dns_flush $domain
   fi
 }
+
 
 dns_flush()
 {
@@ -1003,9 +948,9 @@ dns_flush()
     error "dns_flush: domain is empty"
     return 1
   fi
-  ovh_cli domain zone $domain refresh post
-  ovh_cli domain zone $domain task
-  ovh_cli domain zone $domain status
+  myovh_cli POST /domain/zone/$domain/refresh | jq -r .
+  myovh_cli GET /domain/zone/$domain/task | jq -r .
+  myovh_cli GET /domain/zone/$domain/status | jq -r .
 }
 
 # Call: delete_instance PROJECT_ID INSTANCE_ID
@@ -1017,7 +962,7 @@ delete_instance()
   local instance_mode=$(get_instance_status $p $i FULL | jq -r '.planCode')
 
   if [[ $instance_mode =~ consumption ]] ; then
-    ovh_cli cloud project $p instance $i delete
+    myovh_cli DELETE /cloud/project/$p/instance/$i
   else
     echo "instance_mode $instance_mode delete protected"
     return 1
@@ -1030,16 +975,10 @@ snapshot_create()
   local i=$2
   local snap_name="$3"
 
-  # samedi 14 mars 2020, 00:24:53 (UTC+0100)
-  # bugged
- # ovh_cli cloud project $p instance $i snapshot create \
- #   --snapshotName "$snap_name"
-
-  ovhapi POST "/cloud/project/$p/instance/$i/snapshot" << END
-{
-  "snapshotName": "$snap_name"
-}
-END
+  myovh_cli POST "/cloud/project/$p/instance/$i/snapshot" \
+    "{
+    \"snapshotName\": \"$snap_name\"
+    }"
 
   ret=$?
   return $ret
@@ -1048,7 +987,6 @@ END
 id_is_project()
 {
   # return an array of project_id, -1 if not found
-  #local json=$(ovh_cli --format json cloud project)
   local json=$(myovh_cli GET /cloud/project)
   if ovh_test_credential "$json" ; then
     # if credential are wrong this is not a valid JSON
@@ -1074,7 +1012,7 @@ set_project()
   return 1
 }
 
-# function Usage:
+# Call:
 #   write_conf conffile VAR=value VAR2=value2 DELETE=VAR3 ...
 write_conf()
 {
@@ -1122,15 +1060,44 @@ write_conf()
   fi
 }
 
+# Call: loadconf $conffile
+# load the cloud.conf defined by $conffile is the file exists
+# apply our DEFAULT_* if some values are not defined.
+# preserve exported OUR_VARS if they already exists.
 loadconf()
 {
-    local conffile="$1"
-    if [[ -e "$conffile" ]]
-    then
-        source "$conffile"
-        return 0
+  local conffile="$1"
+  if [[ -e "$conffile" ]]
+  then
+    # TODO: save used env and dont overwrite exported vars
+    local defined_vars_file=$(mktemp $TMP_DIR/defined_vars_file.XXXXX)
+    preserve_our_vars "$OUR_VARS" > $defined_vars_file
+    source "$conffile"
+    # restore $OUR_VARS
+    source $defined_vars_file
+    rm $defined_vars_file
+  fi
+
+  # initialize DEFAULTS
+  local var val
+  for var in $OUR_VARS
+  do
+    # fetch value or empty if unset
+    eval "val=\${$var:-}"
+    if [[ -z $val ]] ; then
+      # set with DEFAULTS
+      eval "$var=\${DEFAULT_$var}"
     fi
-    return 1
+  done
+}
+
+# Call: preserve_our_vars "$OUR_VARS" ...
+# OUR_VARS is a list of var names to preserve if they are already in the env
+preserve_our_vars()
+{
+  local pattern="$*"
+  pattern="^(${pattern// /|})"
+  env | grep -E "$pattern" || true
 }
 
 set_flavor()
@@ -1235,27 +1202,38 @@ list_images()
 
 region_list()
 {
-   ovh_cli --format json cloud project $PROJECT_ID region | jq -r '.[]'
+   myovh_cli GET /cloud/project/$PROJECT_ID/region  | jq -r '.[]'
 }
 
+# Call: instance_set_rescuemode $project_id $instance_id [true|false]
 instance_set_rescuemode()
 {
   local p=$1
   local instance_id=$2
-  # TRUE or FALSE
-  local rescue=${3:-TRUE}
-  ovh_cli --format json cloud project $p instance $instance_id rescue-mode --rescue $rescue
+  # true or false
+  local rescue=${3:-true}
+  if [[ ! $rescue =~ ^(true|false)$ ]] ; then
+    error "rescue value must be 'true' or 'false'"
+    return 1
+  fi
+  myovh_cli POST /cloud/project/$p/instance/$instance_id/rescueMode "{ \"rescue\" : $rescue}"
 }
 
+# Call: instance_reboot $project_id $instance_id [soft|hard]
 instance_reboot()
 {
   local p=$1
   local instance_id=$2
   # hard or soft
   local reboot_type=${3:-soft}
-  ovh_cli cloud project \$PROJECT_ID instance 26b75b0c-80df-4f41-b086-ebcb6eeeb1c1 reboot --type $reboot_type
+  if [[ ! $reboot_type =~ ^(soft|hard)$ ]] ; then
+    error "reboot_type value must be 'hard' or 'soft'"
+    return 1
+  fi
+  myovh_cli POST /cloud/project/$p/instance/$instance_id/reboot "{ \"type\" : \"$reboot_type\" }"
 }
 
+# Call: sshkey_create $project_id $sshkey_name $public_key_fname
 sshkey_create()
 {
   local p=$1
@@ -1263,25 +1241,28 @@ sshkey_create()
   local public_key_fname=$3
 
   if [[ ! -f $public_key_fname ]] ; then
-      fail "public_key_fname not found: '$public_key_fname'"
+      fail "public_key_fname file not found: '$public_key_fname'"
   fi
 
   local pubkey="$(cat $public_key_fname)"
 
-  # bug output: Invalid region parameter
-  local out=$(ovh_cli cloud project $p sshkey create --name $sshkey_name \
-      --publicKey "$pubkey")
-  if [[ $out == 'Invalid region parameter' ]] ; then
-    local check=$(ovh_cli --format json cloud project $p sshkey | \
-      jq -r '.[]|select(.name == "deleteme")|.publicKey')
+  myovh_cli POST /cloud/project/$p/sshkey \
+      "{
+      \"name\" : \"$sshkey_name\",
+      \"publicKey\" : \"$pubkey\"
+      }"
 
-    if [[ "$pubkey" == "$check" ]] ; then
-      echo OK
-    else
-      fail "key creation failure"
-    fi
-  fi
+  ## bug output: Invalid region parameter on OVH API side
+  #if [[ $out == 'Invalid region parameter' ]] ; then
+  #  local check=$(myovh_cli GET /cloud/project/$p/sshkey  | \
+  #    jq -r ".[]|select(.name == \"$sshkey_name\")|.publicKey")
 
+  #  if [[ "$pubkey" == "$check" ]] ; then
+  #    echo OK
+  #  else
+  #    fail "key creation failure"
+  #  fi
+  #fi
 }
 
 wait_for()
@@ -1305,16 +1286,20 @@ wait_for()
     instance)
       # greped against JSON output because we are going to
       # extract many informations IPv4, sshuser
-      cmd="get_instance_status $p $object_id FULL | tee $tmp \
+      cmd="get_instance_status $p $object_id FULL \
+          | tee $tmp \
+          | jq . \
           | grep -q '\"status\": \"ACTIVE\"'"
-      #'"
+      #'" correct vim hilighting
       cmd_success="show_json_instance < $tmp"
       wait_for_ssh=true
       ;;
     snapshot)
-      cmd="get_snapshot_status $p $object_id FULL | tee $tmp \
+      cmd="get_snapshot_status $p $object_id FULL \
+          | tee $tmp \
+          | jq . \
           | grep -q -i '\"status\": \"active\"'"
-      #'"
+      #'" correct vim hilighting
       cmd_success="jq . < $tmp"
       wait_for_ssh=false
       ;;

@@ -1,17 +1,17 @@
 # ovh-tools
 
-Ce dépôt contient un code pour Sysadmin ou DevOps qui utilise l'[API
-OVH](https://eu.api.ovh.com/console/) pour manipuler des instances sur le
-public-cloud. Le script est écrit en bash plus un peu de python pour les
-appels d'API.
-
-Comme c'est destiné à fonctionner sur OVH, j'ai réécrit cette documentation en
-Français, un peu de chauvinisme quoi !
-Le code et les commentaires eux resteront en anglais.
-
 English speaker: ask for translation by creating an issue.
 
-## License
+Ce dépôt contient un cli pour Sysadmin ou DevOps qui utilise l'[API
+OVH](https://eu.api.ovh.com/console/) pour manipuler des instances sur le
+public-cloud. Le script est écrit en bash. Les appels d'API sont fait via le
+wrapper [ovh-cli](https://github.com/opensource-expert/ovh-cli-go) écrit en Go.
+
+Comme c'est destiné à fonctionner sur OVH, j'ai réécrit cette documentation en
+Français. Le code et les commentaires eux resteront en anglais.
+
+
+## Licence
 
 Tout le code de ce repository est distristribué sous [GPL v3](LICENSE)
 
@@ -19,7 +19,6 @@ Tout le code de ce repository est distristribué sous [GPL v3](LICENSE)
 
 Ce code est une "Proof of Concept" un prototype qui sert à démonter l'usage de l'API via bash et nécessite un wrapper
 sur l'API.
-
 
 EDIT: mardi 17 mars 2020, 07:37:52 (UTC+0100)
 
@@ -29,12 +28,12 @@ Actuellement, le code est en transition et la procédure d'installation n'est pa
 
 Il y a plusieurs scripts. Le code principale est `cloud.sh`.
 
-* `cloud.sh` - manipule le public cloud d'OVH : instances, snapshot et domaines
+* `cloud.sh` - manipule le public cloud d'OVH : instances, snapshot et nom de domaines
 * `mk_cred.py` -  initialize  ou met à jour, l'authentification pour l'API OVH avec python
-* `ovh_reverse.py` - active le reverse DNS pour une IP d'instance chez OVH
+* `ovh_reverse.py` - -active le reverse DNS pour une IP d'instance chez OVH- (n'est plus nécessaire)
 
 La documentation manque encore de nombreux détails, et des compétences en
-programmation bash, JSON, python sont fortement recommandées pour utiliser ces
+programmation bash, JSON sont fortement recommandées pour utiliser ces
 outils.
 
 ## Installation
@@ -46,13 +45,11 @@ Nous montrons une installation sous une VM public-cloud.
 
 On suppose que l'installation est testée dans une VM.
 
-Voir les commandes dans  [install.sh](install.sh)
+Voir les commandes dans [install.sh](install.sh)
 
 ### Installation ovh-cli
 
-Installation de [ovh-cli](https://github.com/yadutaf/ovh-cli) en python :
-
-**ATENTION :** ce projet semble mort et sera retiré du code
+Installation de [ovh-cli](https://github.com/opensource-expert/ovh-cli-go)
 
 Voir aussi les commandes dans  [install.sh](install.sh)
 
@@ -501,3 +498,7 @@ Il ne reste plus qu'à :
 ```
 vim cloud.sh
 ```
+
+## Références
+
+* [ovh-cli](https://github.com/yadutaf/ovh-cli) CLI OVH en python (deprecated)

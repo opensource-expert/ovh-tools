@@ -4,6 +4,8 @@
 #
 # Usage: ./install.sh
 #
+# VimF12: execute
+# @c: 0"ry$
 
 set -euo pipefail
 
@@ -11,10 +13,10 @@ set -euo pipefail
 SUDO=""
 
 # uncomment to run as user
-#SUDO=sudo
+SUDO=sudo
 
 $SUDO apt update
-$SUDO apt install -y git curl
+$SUDO apt install -y git curl tree vim
 git clone https://github.com/opensource-expert/ovh-tools.git
 # install jq 1.6, not yet available in package repository
 JQ_URL=https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64

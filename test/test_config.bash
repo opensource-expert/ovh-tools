@@ -20,3 +20,6 @@ TEST_FLAVOR_NAME=s1-2
 DISTRIB_IMAGE='Debian.10$'
 
 CONFFILE=./mytest_cloud.conf
+TEST_INIT_SCRIPT=./init_root_login_OK.sh
+TEST_REGION=GRA5
+DOMAIN=opensource-expert.com
