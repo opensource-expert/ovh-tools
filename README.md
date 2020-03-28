@@ -51,16 +51,19 @@ Voir les commandes dans [install.sh](install.sh)
 
 Installation de [ovh-cli](https://github.com/opensource-expert/ovh-cli-go)
 
-Voir aussi les commandes dans  [install.sh](install.sh)
+```
+OVH_CLI=https://github.com/opensource-expert/ovh-cli-go/releases/download/v0.3/ovh-cli_linux_amd64
+sudo wget $OVH_CLI -O /usr/local/bin/ovh-cli
+sudo chmod a+x /usr/local/bin/ovh-cli
+ovh-cli --version
+```
+
+Voir aussi les commandes dans [install.sh](install.sh)
 
 ### La structure des dossiers attendue
 
 ```
 .
-├── ovh-cli
-│   ├── ovhcli
-│   │   └── formater
-│   └── schemas
 └── ovh-tools
     ├── templates
     └── test
@@ -68,13 +71,13 @@ Voir aussi les commandes dans  [install.sh](install.sh)
 
 Pour tous les exemples on travaille toujours dans le dossier `~/ovh-tools`.
 
-## Scritp générateur de config pour l'authentification API (experimental)
+## Script générateur de config pour l'authentification API (experimental)
 
-Pour l'API OVH, les paramètres d'authentification sont stoqués dans le `ovh.conf`
+Pour `cloud.sh` utilise les paramètres d'authentification qui sont stoqués dans le `ovh.conf`
 qui est dans le dossier local. C'est un fichier `ini` décrit
 [ici](https://github.com/ovh/python-ovh#2-configure-your-application).
 
-L'API OVH python reconnait ce fichier automatiquement.
+L'API OVH python ou Go reconnait ce fichier automatiquement.
 
 On peut construire automatiquement le fichier de credential avec la commande suivante.
 
@@ -108,16 +111,19 @@ Sélectionnez le contenu à l'écran comme sur le screeshot ci-dessous, collez +
 Recommencer le processus avec vos identiants OVH pour créer le credential avec
 l'application que nous venons de créer.
 
-Partage du fichier d'authentification avec le script `ovh-cli` :
-
-Il suffit de copier ou de faire un lien symbolique dans les 2 dossiers
-`ovh-tools/` `ovh-cli/`.
+Le résultat se trouve dans `ovh_conf.tmp`.
 
 ```
-# after init a temp file is created, to not destroy any existing ovh.conf
+# after init a temp file is created, in order to prevent overwriting any existing ovh.conf
 mv ovh_conf.tmp ovh.conf
-cd ../ovh-cli
-ln -s ../ovh-tools/ovh.conf .
+```
+
+Partage du fichier d'authentification avec `ovh-cli` :
+
+Il suffit de copier (ou de faire un lien symbolique):
+
+```
+ln -s ~/ovh-tools/ovh.conf ~/.ovh.conf
 ```
 
 Pour plus de détails référez vous la documentation de l'API OVH en
@@ -127,41 +133,53 @@ Pour plus de détails référez vous la documentation de l'API OVH en
 ## Test de l'authentification
 
 ```
-cd ~/ovh-cli
-./ovh-eu  auth current-credential
+ovh-cli GET /auth/currentCredential | jq .
 ```
 
 Si tout s'est bien passé on obtient:
 
+```json
+{
+  "lastUse": null,
+  "creation": "2020-03-28T08:07:14+01:00",
+  "ovhSupport": false,
+  "credentialId": 498601349,
+  "applicationId": 105668,
+  "expiration": "2020-03-29T09:07:39+02:00",
+  "rules": [
+    {
+      "path": "/*",
+      "method": "GET"
+    },
+    {
+      "path": "/*",
+      "method": "POST"
+    },
+    {
+      "path": "/*",
+      "method": "PUT"
+    },
+    {
+      "path": "/*",
+      "method": "DELETE"
+    }
+  ],
+  "allowedIPs": null,
+  "status": "validated"
+}
 ```
---------------  -------------------------------------------------------------------------------------------
-Status          validated
-Last use        None
-Ovh support     False
-Creation        2019-07-19T07:24:08+02:00
-Credential id   484630013
-Rules           {u'path': u'/*', u'method': u'GET'}, {u'path': u'/*', u'method': u'POST'}, {u'path': u'/*',
-                u'method': u'PUT'}, {u'path': u'/*', u'method': u'DELETE'}
-Expiration      2019-07-20T07:24:32+02:00
-Application id  85898
---------------  -------------------------------------------------------------------------------------------
-```
 
-Avec `Status validated`.
+Avec `status:` **`validated`**.
 
-Et quand ça ne marche pas:
 
-```
-Invalid ApplicationSecret 'None'
-```
+Quand ça ne fonctionne pas il y a des messages d'erreur.
+Ou des infos avec `status expired`
 
-ou des infos avec `status expired`
-
-Peut-être qu'il n'y a pas de crédential dans le dossier `~/ovh-cli`
+Peut-être qu'il n'y a pas de crédential dans le dossier `~/ovh-cli` ?
 On peut utiliser celui généré par `mk_cred.py`
 
 ```
-ln -s ../ovh-tools/ovh.conf  .
+ln -s ~/ovh-tools/ovh.conf  ~/.ovh.conf
 ```
 
 ## Debug de cloud.sh
@@ -179,11 +197,11 @@ Le cas le plus commun est des credential invalides ou expirés, on vérifie avec
 
 ```
 cd ~/ovh-tools
-./cloud.sh call ovh_cli auth current-credential
-./cloud.sh call ovh_cli me
+./cloud.sh call myovh_cli GET /auth/currentCredential
+./cloud.sh call myovh_cli GET /me
 ```
 
-Solution : recommencer l'étape d'initialiation des credential d'API. Ou juste
+Solution : recommencer l'étape d'initialisation des credential d'API. Ou juste
 un `./mk_cred.py update` si le token est expiré.
 
 ### `no project set, or no action`no project set, or no action
@@ -285,16 +303,15 @@ manager web d'OVH dans votre projet. Les clés sont par projet.
 
 Il nous faut d'abord les arguments : `image_id` `sshkey_id`
 
-On prend la première qui est une image minimale Debian 9 (Stretch) qui vient
-de passer à `old stable` début juillet 2019.
+On prend une image minimale Debian 10 (Buster).
 
 ```
-./cloud.sh image_list | grep 'Debian 9$'
+./cloud.sh image_list | grep 'Debian 10$'
 ```
 
 ```
 # adjust with the outputed value of course it may change
-image_id=96fa7656-10d6-4de3-a4a3-b756671f7593
+image_id=b543fb62-56a8-47ba-9548-9f80e8fd8e0d
 ```
 
 La clé ssh (les clés sont par projet, même si c'est ma même clé) :
@@ -377,7 +394,7 @@ s1-2.consumption                       ==> le type de machine FLAVOR
 debian                                 ==> le user de connexion
 ```
 
-Pour avoir plus d'info on peut avoir le JSON (parsable directement avec jq)
+Pour avoir plus d'info on peut avoir le JSON (parsable directement avec `jq`)
 
 ```
 ./cloud.sh status_full $instance_id
@@ -403,27 +420,6 @@ snapshot_id=$(./cloud.sh snap_list | awk "\$2 == \"$snapshot_name\" { print \$1}
 ./cloud.sh snap_list
 ```
 
-### supprimer un snapshot
-
-```
-./cloud.sh snap_delete $snapshot_id
-```
-
-### supprimer une instance
-
-```
-./cloud.sh delete $instance_id
-```
-
-Et si vous êtes pressé et sûr de ce que vous faîtes...
-
-```
-# WARNING: will distroy all running instances without confirm
-# cannot really be canceled... you may try CTRL-C
-# With Great Power Comes Great Responsibility!
-./cloud.sh delete ALL
-```
-
 ### recréer une instance à partir d'un snapshot
 
 Comme pour la création à partir d'une image, il faudra réunir des paramètres
@@ -446,17 +442,46 @@ La suite est identique au `create`, sauf que c'est un `snapshot_id` et pas une `
 ./cloud.sh create $snapshot_id $sshkey_id $hostname
 ```
 
+### supprimer un snapshot
+
+```
+./cloud.sh snap_delete $snapshot_id
+```
+
+### supprimer une instance
+
+```
+./cloud.sh delete $instance_id
+```
+
+Et si vous êtes pressé et sûr de ce que vous faîtes...
+
+```
+####################### WARNING !!! #########################
+#
+# WARNING: will distroy all running instances without confirm
+# cannot really be canceled... you may try CTRL-C
+# With Great Power Comes Great Responsibility!
+#
+####################### WARNING !!! #########################
+#
+# you've been warned
+#
+####################### WARNING !!! #########################
+./cloud.sh delete ALL
+```
+
 ## Appel direct à l'API
 
 Alors vous êtes un utilisateur confirmé de bash et vous en voulez plus. Ce PoC
 réserve encore quelques joyeusetés.
 
 Le script permet en effet d'appeler directement les fonctions internes
-depuis la ligne de commande, y compris `ovh_cli` qui accède directement à
-l'API OVH via pyhton.
+depuis la ligne de commande, y compris `myovh_cli` qui accède directement à
+l'API OVH. Mais c'est encore plus simple de l'appeler directement.
 
 Dans les exemples d'appel direct aux fonctions internes, on notera que la variable
-`$PROJECT_ID` n'est pas disponible dans le shell parent, mais le sera évaluée
+`$PROJECT_ID` n'est pas disponible dans le shell parent, mais elle sera évaluée
 dans `cloud.sh` qui, lui, chargera les valeurs de `cloud.conf`. Lors de l'appel
 un backslash passe le signe `$` au script parent.
 
@@ -481,23 +506,25 @@ Remplacer les espaces par des . dans les pattern pour grep, car `call` fait un
 ## saved
 
 Encore un peu plus de hacking. Ce PoC permet d'étendre les fonctionnalité de `cloud.sh` en enregistrant des commandes
-dans un `.sh` et en les faisantnt jouer par cloud.sh dans le même environnement de code que cloud.sh lui même.
+dans un `.sh` et en les faisant jouer par `cloud.sh` dans le même environnement de code que `cloud.sh` lui même.
 
 ```
-./cloud.sh run saved/debian_10.sh "new-vm.opensource-exper.com"
+./cloud.sh run saved/debian_10.sh "new-vm.opensource-expert.com"
 ```
 
 Quand vous avez une suite de commande qui fonctionne, mettez les dans un `saved/script.sh` et lancer ça automatiquement.
 
 ## encore plus
 
-Oui il y en a encore, mais je vais devoir framenter cette doc qui devient trop longue.
+Oui il y en a encore, mais je vais devoir fragmenter cette doc qui devient trop longue.
 
 Il ne reste plus qu'à :
 
 ```
 vim cloud.sh
 ```
+
+Joyeux hacking !
 
 ## Références
 

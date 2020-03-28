@@ -131,20 +131,22 @@ DEFAULT_REGION=WAW1
 DNS_TTL=60
 DEFAULT_FLAVOR=s1-2
 
+OVH_CLI=$(command -v ovh-cli)
 
 ###################################### functions
 
-myovh_cli() {
+myovh_cli()
+{
 # "ux?--d2f ?ovh_cliimyea GET /=substitute(@u, ' ', '/', 'g')
 # ^vt "kxi\"\" :F\ikF"ldf-f:wi\"eea\",
   if [[ -t 0 ]] ; then
     log "ovh-cli $1 $2 '${3:-}'"
-    ~/.local/bin/ovh-cli "$@" 2> /dev/null
+    $OVH_CLI "$@" 2> /dev/null
   else
     # stdin
     local stdin=$(cat)
     log "ovh-cli $1 $2 '$stdin'"
-    echo "$stdin" | ~/.local/bin/ovh-cli "$@" 2> /dev/null
+    echo "$stdin" | $OVH_CLI "$@" 2> /dev/null
   fi
 }
 
