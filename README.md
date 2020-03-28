@@ -30,7 +30,7 @@ Il y a plusieurs scripts. Le code principale est `cloud.sh`.
 
 * `cloud.sh` - manipule le public cloud d'OVH : instances, snapshot et nom de domaines
 * `mk_cred.py` -  initialize  ou met à jour, l'authentification pour l'API OVH avec python
-* `ovh_reverse.py` - -active le reverse DNS pour une IP d'instance chez OVH- (n'est plus nécessaire)
+* `ovh_reverse.py` - ~~active le reverse DNS pour une IP d'instance chez OVH~~ (n'est plus nécessaire)
 
 La documentation manque encore de nombreux détails, et des compétences en
 programmation bash, JSON sont fortement recommandées pour utiliser ces
